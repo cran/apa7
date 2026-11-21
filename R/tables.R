@@ -54,19 +54,34 @@ add_break_columns <- function(
     where_names <- where_names[-length(where_names)]
   }
 
-  if (length(where_names) == 0) return(d)
+  if (length(where_names) == 0) {
+    return(d)
+  }
 
   blank_names <- paste0("apa7breakcolumn", seq_along(where_names))
 
   where_numbers <- seq(1, ncol(d))[colnames(d) %in% where_names]
-  shifter <- ifelse(.before, 0, 1)
-  keys <- R.utils::insert(
+  shifter <- 1L - .before * 1L
+  keys <- insert_at(
     colnames(d),
     ats = where_numbers + shifter,
     values = blank_names
   )
   d[, blank_names] <- NA
   d[, keys]
+}
+
+#' Insert values into a vector
+#'
+#' Like `R.utils::insert()`: each value is inserted before the element at the
+#' matching position of the original vector (`length(x) + 1` appends).
+#' @param x vector
+#' @param ats positions in `x`, one per value
+#' @param values values to insert
+#' @keywords internal
+#' @noRd
+insert_at <- function(x, ats, values) {
+  c(x, values)[order(c(seq_along(x), ats - 0.5))]
 }
 
 #' Make a column into a list column
@@ -111,7 +126,9 @@ add_list_column <- function(
     vl <- paste0(vseq, sep)
   } else if (tolower(type) == "i") {
     rmn <- utils::as.roman(vseq)
-    if (type == "i") rmn <- tolower(rmn)
+    if (type == "i") {
+      rmn <- tolower(rmn)
+    }
     vl <- paste0(rmn, sep, recycle0 = TRUE)
   } else {
     vl <- paste0(rep_letters(vseq, type = type), sep, recycle0 = TRUE)
@@ -137,9 +154,15 @@ add_list_column <- function(
 #' @keywords internal
 rep_letters <- function(i, type = c("a", "A")) {
   # https://stackoverflow.com/a/25881167/4513316
-  if (any(i < 1)) return(character(0))
+  if (any(i < 1)) {
+    return(character(0))
+  }
   type <- match.arg(type)
-  if (type == "a") letts <- letters else letts <- LETTERS
+  if (type == "a") {
+    letts <- letters
+  } else {
+    letts <- LETTERS
+  }
   base10toA <- function(n, A) {
     stopifnot(n >= 0L)
     N <- length(A)
@@ -191,7 +214,7 @@ add_star_column <- function(
   star_names <- paste0(where_names, "apa7starcolumn")
 
   where_numbers <- seq(1, ncol(data))[colnames(data) %in% where_names]
-  keys <- R.utils::insert(
+  keys <- insert_at(
     colnames(data),
     ats = where_numbers + 1,
     values = star_names
@@ -250,7 +273,9 @@ separate_star_column <- function(
   .dots <- rlang::expr(...)
   apa7rownumber <- apa7starvalue <- apa7starname <- apa7starcolumn <- NULL
 
-  if (missing(.dots)) .dots <- colnames(data)
+  if (missing(.dots)) {
+    .dots <- colnames(data)
+  }
   ss <- ifelse(superscript, "^", "")
 
   d <- data |>
@@ -362,18 +387,23 @@ apa_chisq <- function(
   suppress_warnings = TRUE,
   ...
 ) {
-  if (is.null(font_family)) font_family <- the$font_family
-  if (!inherits(data, "data.frame"))
+  if (is.null(font_family)) {
+    font_family <- the$font_family
+  }
+  if (!inherits(data, "data.frame")) {
     stop("data must be a data.frame or tibble.")
-  if (ncol(data) != 2)
+  }
+  if (ncol(data) != 2) {
     stop(
       'data must have 2 columns. Select the 2 variables you wish to test before passing them to this function. For example:\nx <- mtcars[, c("am", "cyl")]\nor\nx <- dplyr::select(mtcars, am, cyl)'
     )
+  }
 
   tbl <- table(data)
 
-  if (nrow(tbl) < 2 || ncol(tbl) < 2)
+  if (nrow(tbl) < 2 || ncol(tbl) < 2) {
     stop("The contingency table must be at least a 2 by 2 table.")
+  }
 
   if (suppress_warnings) {
     fit <- suppressWarnings(stats::chisq.test(tbl))
@@ -509,11 +539,15 @@ apa_cor <- function(
   ...
 ) {
   value <- name <- Variable <- k <- group <- width <- NULL
-  if (is.null(font_family)) font_family <- the$font_family
+  if (is.null(font_family)) {
+    font_family <- the$font_family
+  }
   output <- match.arg(output)
   v_names <- colnames(data)
-  v_seq <- seq(ncol(data))
-  if (is.null(column_formats)) column_formats <- column_formats()
+  v_seq <- seq_len(ncol(data))
+  if (is.null(column_formats)) {
+    column_formats <- column_formats()
+  }
 
   if (bold_significant) {
     star_significant <- FALSE
@@ -829,8 +863,9 @@ apa_cor <- function(
 #' @param auto_format_columns if true, will attempt to format some columns automatically
 #' @param column_formats a column_formats object
 #' @param pretty_widths apply `pretty_widths` function
-#' @param no_format_columns Column name or tidyselect function. selected columns are not formatted
+#' @param no_format_columns Column name or tidyselect function. selected columns are not formatted. Columns named in a `"no_format_columns"` attribute of `data` (set by functions such as [apa_loadings()]) are not formatted either. Likewise, a rule is drawn above the first body row whose first-column text matches a `"rule_above"` attribute of `data`.
 #' @param add_breaks_between_spanners add breaks between spanners if TRUE
+#' @param note table note placed below the table, after "*Note*.". If `TRUE`, the note is written by [apa_note()] from what a table function such as [apa_anova()], [apa_parameters()], or [apa_loadings()] recorded. A character string is used as the note (markdown is allowed), and `NULL` or `FALSE` (default) adds no note. Use this for documents that are not made with apaquarto. With apaquarto, use the `apa-note` chunk option instead (e.g., `#| apa-note: !expr apa7::apa_note(tbl)`), so that the note is placed and styled by apaquarto and is not added twice.
 #' @inheritParams apa_style
 #' @param ... arguments passed to `apa_style`
 
@@ -888,6 +923,7 @@ apa_flextable <- function(
   column_formats = NULL,
   pretty_widths = TRUE,
   add_breaks_between_spanners = TRUE,
+  note = NULL,
   ...
 ) {
   # Prevent check warning
@@ -912,8 +948,7 @@ apa_flextable <- function(
       {{ row_title_column }}
     ) |>
       colnames()
-  } else {
-  }
+  } else {}
 
   header_align_vertical <- match.arg(header_align_vertical)
 
@@ -926,8 +961,16 @@ apa_flextable <- function(
   no_format_columns <- dplyr::select(data, {{ no_format_columns }}) |>
     colnames()
 
+  # Tables such as apa_loadings() mark columns that must not be reformatted
+  no_format_columns <- union(
+    no_format_columns,
+    intersect(attr(data, "no_format_columns", exact = TRUE), colnames(data))
+  )
+
   # Get default column formats
-  if (is.null(column_formats)) column_formats <- the$column_formats
+  if (is.null(column_formats)) {
+    column_formats <- the$column_formats
+  }
 
   if (row_title_prefix == "") {
     row_title_sep <- ""
@@ -1046,25 +1089,27 @@ apa_flextable <- function(
       theme_fun = flextable::theme_apa
     ) |>
       flextable::mk_par(
-        i = ~!is.na(row_title),
+        i = ~ !is.na(row_title),
         value = flextable::as_paragraph(
           row_title_prefix,
           row_title_sep,
           row_title
         )
       ) |>
-      flextable::merge_h(i = ~!is.na(row_title))
+      flextable::merge_h(i = ~ !is.na(row_title))
 
-    if (all(!is.na(row_title_border))) {
+    if (!anyNA(row_title_border)) {
       ft <- ft |>
         flextable::surround(
-          i = ~!is.na(row_title),
+          i = ~ !is.na(row_title),
           border.top = row_title_border
         )
     }
   }
 
-  if (separate_headers) ft <- flextable::separate_header(ft, split = "[_]")
+  if (separate_headers) {
+    ft <- flextable::separate_header(ft, split = "[_]")
+  }
   if (!is_docx) {
     ft <- flextable::empty_blanks(ft)
   }
@@ -1075,6 +1120,18 @@ apa_flextable <- function(
   if (length(center_me) > 0) {
     ft <- flextable::align(ft, j = center_me, align = "center")
   }
+  cnames <- colnames(data)
+  if (length(cnames) > 2) {
+    if (cnames[1] == "Model" && cnames[2] == "Variable") {
+      # Model is not a column when it is the row_title_column
+      ft <- flextable::align(
+        ft,
+        j = intersect(c("Model", "Variable"), ft$col_keys),
+        part = "all"
+      )
+    }
+  }
+
 
   if (apa_style) {
     ft <- apa_style(
@@ -1103,7 +1160,7 @@ apa_flextable <- function(
   if ("row_title" %in% colnames(d)) {
     ft <- flextable::align(
       ft,
-      i = ~!is.na(row_title),
+      i = ~ !is.na(row_title),
       align = row_title_align,
       part = "body"
     )
@@ -1111,7 +1168,7 @@ apa_flextable <- function(
       ft <- flextable::padding(
         ft,
         j = 1,
-        i = ~is.na(row_title),
+        i = ~ is.na(row_title),
         padding.left = left_column_padding
       )
     }
@@ -1122,19 +1179,116 @@ apa_flextable <- function(
     ft <- pretty_widths(ft, table_width = table_width * 6.5)
   }
 
+  if (is.null(font_family)) {
+    font_family <- the$font_family
+  }
+  ft <- align_padded_columns(
+    ft,
+    d,
+    font_family = font_family,
+    font_size = font_size,
+    horizontal_padding = horizontal_padding
+  )
+
+  # Tables such as apa_loadings() name rows that need a rule above them
+  ft <- add_rule_above(
+    ft,
+    attr(data, "rule_above", exact = TRUE),
+    border_color = border_color,
+    border_width = border_width
+  )
+
+  # Added last so that the note does not affect column widths
+  ft <- add_note_footer(
+    ft,
+    note_text(data, note),
+    font_family = font_family,
+    font_size = font_size,
+    text_color = text_color,
+    line_spacing = line_spacing,
+    horizontal_padding = horizontal_padding
+  )
+
   class(ft) <- unique(c("apaflextable", class(ft)))
 
+  ft
+}
+
+#' Align padded columns on one side
+#'
+#' Columns padded by [align_chr()] line up only if every cell's text starts at
+#' the same position. In a centered cell, that requires the text on both sides
+#' of the alignment character to have equal widths, which is hard to achieve
+#' with superscripts and other glyphs of irregular width. Instead, body cells
+#' of padded columns are left-aligned, so only the left side's padding matters.
+#' A uniform left padding centers the widest cell under the header. An
+#' inaccurate width estimate shifts all rows equally, so it does not misalign
+#' them.
+#' @param ft flextable
+#' @param d data used to make `ft`
+#' @keywords internal
+#' @noRd
+align_padded_columns <- function(
+  ft,
+  d,
+  font_family,
+  font_size,
+  horizontal_padding
+) {
+  # Spaces that align_chr and num_pad use for padding
+  pad_re <- "[\u2002-\u200a]|&numsp;"
+
+  keys <- intersect(ft$col_keys[-1], colnames(d))
+
+  # Leave value columns paired with star or list columns as apa_style sets them
+  star_keys <- ft$col_keys[grepl("apa7starcolumn$", ft$col_keys)]
+  list_keys <- ft$col_keys[grepl("apa7listcolumn$", ft$col_keys)]
+  paired <- c(
+    ft$col_keys[match(star_keys, ft$col_keys) - 1],
+    ft$col_keys[match(list_keys, ft$col_keys) + 1]
+  )
+  keys <- keys[!grepl("apa7(starcolumn|listcolumn)$|^apa7breakcolumn", keys)]
+  keys <- setdiff(keys, paired)
+
+  # Skip row-title rows, which span the table
+  rows <- seq_len(nrow(d))
+  if ("row_title" %in% colnames(d)) {
+    rows <- which(is.na(d$row_title))
+  }
+  if (length(rows) == 0) {
+    return(ft)
+  }
+
+  for (k in keys) {
+    v <- as.character(d[[k]])[rows]
+    if (!any(grepl(pad_re, v))) {
+      next
+    }
+    block_width <- max(md_text_width(v, font_family)) * font_size
+    col_width <- ft$body$colwidths[[match(k, ft$col_keys)]] * 72
+    padding_left <- max(horizontal_padding, (col_width - block_width) / 2)
+    ft <- ft |>
+      flextable::align(i = rows, j = k, align = "left", part = "body") |>
+      flextable::padding(
+        i = rows,
+        j = k,
+        padding.left = padding_left,
+        part = "body"
+      )
+  }
   ft
 }
 
 #' format model parameters in APA style
 #'
 #' @param fit model fit object
-#' @param predictor_parameters predictor parameters to display. If named vector, column names will be vector names
+#' @param predictor_parameters predictor parameters to display. If named vector, column names will be vector names. Columns not present in the model output (e.g., `t` for a model tested with *z*) are silently dropped. For lists of models, `NULL` (default) uses the default for each model's class. Add `"CI"` to show confidence intervals as \[*LL*, *UL*\] (headed, e.g., "95% CI"), and, for `glm`, `polr`, and `clm` models, `"Exp_CI"` to show confidence intervals of exponentiated coefficients (headed, e.g., "95% CI for *OR*"). Confidence intervals are not shown by default.
 #' @param starred columns to star with significant p_values
 #' @param bolded columns to bold, if significant
 #' @param column_formats column_formats object to format columns. If NULL, the default column_formats is used.
 #' @param t_with_df if TRUE, the t column will be displayed with degrees of freedom in parentheses. If FALSE, only the t value is displayed.
+#' @param ... arguments passed to methods. For `lm`, `glm`, `polr`, and `clm` models, further arguments are passed to [parameters::model_parameters()]. For example, `vcov = "HC3"` gives heteroskedasticity-consistent (robust) standard errors, and the test statistics, *p*-values, and confidence intervals are based on them. `ci = .90` sets the confidence level.
+#' @param performance_parameters for lists of models, model comparison metrics passed to [apa_performance_comparison()]. If `NULL`, no metrics are added. By default, `R2` and `deltaR2`; for lists of mixed models (`lme4`), the default also includes the conditional *R*^2^ and its change (`R2_conditional`, `deltaR2_conditional`), and `R2` is the marginal *R*^2^.
 #'
 #' @return tibble
 #' @export
@@ -1143,6 +1297,16 @@ apa_flextable <- function(
 #' lm(mpg ~ cyl + wt, data = mtcars) |>
 #'    apa_parameters() |>
 #'    apa_flextable()
+#'
+#' # Confidence intervals with robust (HC3) standard errors
+#' if (requireNamespace("sandwich", quietly = TRUE)) {
+#'   lm(mpg ~ cyl + wt, data = mtcars) |>
+#'     apa_parameters(
+#'       predictor_parameters = c("Parameter", "Coefficient", "SE", "CI", "t", "df_error", "p"),
+#'       vcov = "HC3"
+#'     ) |>
+#'     apa_flextable()
+#' }
 apa_parameters <- function(
   fit,
   predictor_parameters = c(
@@ -1156,7 +1320,8 @@ apa_parameters <- function(
   starred = NULL,
   bolded = NULL,
   column_formats = NULL,
-  t_with_df = TRUE
+  t_with_df = TRUE,
+  ...
 ) {
   UseMethod("apa_parameters")
 }
@@ -1178,23 +1343,16 @@ apa_parameters.lm <- function(
   starred = NA,
   bolded = NA,
   column_formats = NULL,
-  t_with_df = TRUE
+  t_with_df = TRUE,
+  ...
 ) {
   # Prevent warnings
-  pstar <- Parameter <- Std_Coefficient <- df_error <- header <- name <- NULL
-
-  # Get column formats
-  if (is.null(column_formats)) column_formats <- the$column_formats
-
-  # Make sure Parameter is in the predictor_parameters
-  if (!("Parameter" %in% predictor_parameters)) {
-    predictor_parameters <- c("Parameter", predictor_parameters) # nocov
-  }
+  Parameter <- Std_Coefficient <- NULL
 
   names(predictor_parameters) <- NULL
 
   # Get and format parameters
-  d_b <- parameters::model_parameters(fit) |>
+  d_b <- parameters::model_parameters(fit, ...) |>
     tibble::as_tibble() |>
     dplyr::mutate(Parameter = parameters::format_parameters(fit))
 
@@ -1209,18 +1367,542 @@ apa_parameters.lm <- function(
       dplyr::left_join(d_std, by = dplyr::join_by(Parameter))
   }
 
+  format_apa_parameters(
+    d_b,
+    predictor_parameters = predictor_parameters,
+    starred = starred,
+    bolded = bolded,
+    column_formats = column_formats,
+    t_with_df = t_with_df,
+    note = list(vcov = describe_vcov(list(...)$vcov))
+  )
+}
+
+#' @param exponentiate if `NULL` (default), exponentiated coefficients are added when the model's link function is logit or log (i.e., odds ratios, risk ratios, or incidence rate ratios). If `TRUE`, exponentiated coefficients are always added. If `FALSE`, they are never added.
+#' @details
+#' For `glm` objects (including `MASS::glm.nb`), the test statistic is *z* for families with a fixed dispersion parameter (binomial, Poisson, negative binomial) and *t* for families with an estimated dispersion parameter (Gaussian, Gamma, inverse Gaussian, quasi families). Whichever statistic applies is displayed. The exponentiated coefficient column (`Exp_Coefficient`) is labeled *OR* for logit links, *IRR* for log links in count models (Poisson, quasi-Poisson, negative binomial), *RR* for log links in binomial models, and Exp(*B*) otherwise.
+#' @export apa_parameters.glm
+#' @export
+#' @rdname apa_parameters
+#' @examples
+#' glm(am ~ wt + hp, data = mtcars, family = binomial) |>
+#'    apa_parameters() |>
+#'    apa_flextable()
+apa_parameters.glm <- function(
+  fit,
+  predictor_parameters = c(
+    "Parameter",
+    "Coefficient",
+    "SE",
+    "Exp_Coefficient",
+    "t",
+    "z",
+    "df_error",
+    "p"
+  ),
+  starred = NA,
+  bolded = NA,
+  column_formats = NULL,
+  t_with_df = TRUE,
+  exponentiate = NULL,
+  ...
+) {
+  # Prevent warnings
+  Parameter <- Std_Coefficient <- Coefficient <- NULL
+
+  if (is.null(column_formats)) {
+    column_formats <- the$column_formats
+  }
+
+  names(predictor_parameters) <- NULL
+
+  link <- stats::family(fit)$link
+  if (is.null(exponentiate)) {
+    exponentiate <- link %in% c("logit", "log")
+  }
+
+  d_b <- parameters::model_parameters(fit, ...) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(Parameter = parameters::format_parameters(fit))
+
+  if (exponentiate) {
+    d_b <- add_exp_columns(d_b, predictor_parameters)
+    # Label exponentiated coefficients by link
+    column_formats <- label_exp_columns(
+      column_formats,
+      exp_coefficient_label(fit)
+    )
+  }
+
+  if ("Std_Coefficient" %in% predictor_parameters) {
+    d_std <- parameters::standardise_parameters(fit, method = "basic") |>
+      tibble::as_tibble() |>
+      dplyr::mutate(Parameter = parameters::format_parameters(fit)) |>
+      dplyr::select(Parameter, Std_Coefficient)
+
+    d_b <- d_b |>
+      dplyr::left_join(d_std, by = dplyr::join_by(Parameter))
+  }
+
+  # z tests have infinite df, which should not be displayed
+  if ("df_error" %in% colnames(d_b) && all(is.infinite(d_b$df_error))) {
+    d_b$df_error <- NULL
+  }
+
+  format_apa_parameters(
+    d_b,
+    predictor_parameters = predictor_parameters,
+    starred = starred,
+    bolded = bolded,
+    column_formats = column_formats,
+    t_with_df = t_with_df,
+    note = list(vcov = describe_vcov(list(...)$vcov))
+  )
+}
+
+#' @param thresholds for ordinal models, if `TRUE` (default), threshold (cutpoint) rows are displayed below the predictors.
+#' @details
+#' For ordinal regression models (`MASS::polr` and `ordinal::clm`), coefficients are tested with Wald *z* tests. (`parameters` reports *t* for `polr`, but the test is asymptotically normal, and `clm` reports *z* for the same model.) With a logit link, exponentiated coefficients are cumulative odds ratios, labeled *OR*. Threshold rows show only the estimate, its standard error, and its confidence interval, because their exponentiated values are not odds ratios, and testing whether a threshold equals 0 is not meaningful. Confidence intervals (`"CI"`, `"Exp_CI"`) are Wald *z* intervals, consistent with the *z* tests.
+#' @export
+#' @rdname apa_parameters
+#' @examples
+#' \donttest{
+#' if (requireNamespace("MASS", quietly = TRUE) &&
+#'     requireNamespace("carData", quietly = TRUE)) {
+#'   MASS::polr(poverty ~ gender + age, data = carData::WVS, Hess = TRUE) |>
+#'     apa_parameters()
+#' }
+#' }
+apa_parameters.polr <- function(
+  fit,
+  predictor_parameters = c(
+    "Parameter",
+    "Coefficient",
+    "SE",
+    "Exp_Coefficient",
+    "z",
+    "p"
+  ),
+  starred = NA,
+  bolded = NA,
+  column_formats = NULL,
+  t_with_df = TRUE,
+  exponentiate = NULL,
+  thresholds = TRUE,
+  ...
+) {
+  link <- if (fit$method == "logistic") "logit" else fit$method
+  apa_parameters_ordinal(
+    fit,
+    link = link,
+    predictor_parameters = predictor_parameters,
+    starred = starred,
+    bolded = bolded,
+    column_formats = column_formats,
+    t_with_df = t_with_df,
+    exponentiate = exponentiate,
+    thresholds = thresholds,
+    ...
+  )
+}
+
+#' @export
+#' @rdname apa_parameters
+apa_parameters.clm <- function(
+  fit,
+  predictor_parameters = c(
+    "Parameter",
+    "Coefficient",
+    "SE",
+    "Exp_Coefficient",
+    "z",
+    "p"
+  ),
+  starred = NA,
+  bolded = NA,
+  column_formats = NULL,
+  t_with_df = TRUE,
+  exponentiate = NULL,
+  thresholds = TRUE,
+  ...
+) {
+  apa_parameters_ordinal(
+    fit,
+    link = as.character(fit$link),
+    predictor_parameters = predictor_parameters,
+    starred = starred,
+    bolded = bolded,
+    column_formats = column_formats,
+    t_with_df = t_with_df,
+    exponentiate = exponentiate,
+    thresholds = thresholds,
+    ...
+  )
+}
+
+#' Parameters of ordinal cumulative link models
+#' @param link link function ("logit", "probit", ...)
+#' @keywords internal
+#' @noRd
+apa_parameters_ordinal <- function(
+  fit,
+  link,
+  predictor_parameters,
+  starred,
+  bolded,
+  column_formats,
+  t_with_df,
+  exponentiate,
+  thresholds,
+  ...
+) {
+
+  if (is.null(column_formats)) {
+    column_formats <- the$column_formats
+  }
+  names(predictor_parameters) <- NULL
+
+  if (is.null(exponentiate)) {
+    exponentiate <- link == "logit"
+  }
+
+  d_b <- parameters::model_parameters(fit, ...) |>
+    tibble::as_tibble() |>
+    dplyr::mutate(Parameter = parameters::format_parameters(fit))
+
+  # Thresholds are "alpha" (polr) or "intercept" (clm)
+  is_threshold <- d_b$Component %in% c("alpha", "intercept")
+
+  # Wald tests of ordinal models are asymptotically normal
+  if ("t" %in% colnames(d_b)) {
+    d_b <- dplyr::rename(d_b, z = "t")
+    # Wald z intervals, consistent with the z test
+    if (all(c("CI", "CI_low", "CI_high", "SE") %in% colnames(d_b))) {
+      crit <- stats::qnorm((1 + d_b$CI) / 2)
+      d_b$CI_low <- d_b$Coefficient - crit * d_b$SE
+      d_b$CI_high <- d_b$Coefficient + crit * d_b$SE
+    }
+  }
+  d_b$p <- 2 * stats::pnorm(-abs(d_b$z))
+  d_b$df_error <- NULL
+
+  if (exponentiate) {
+    d_b <- add_exp_columns(d_b, predictor_parameters)
+    exp_columns <- intersect(
+      c("Exp_Coefficient", "Exp_CI_low", "Exp_CI_high"),
+      colnames(d_b)
+    )
+    d_b[is_threshold, exp_columns] <- NA
+    if (link == "logit") {
+      column_formats <- label_exp_columns(
+        column_formats,
+        c(header = "*OR*", latex = "$OR$", abbreviation = "cumulative odds ratio")
+      )
+    }
+  }
+
+  # Testing whether a threshold equals 0 is not meaningful
+  d_b$z[is_threshold] <- NA
+  d_b$p[is_threshold] <- NA
+
+  # Predictors first, then thresholds
+  d_b <- d_b[order(is_threshold), ]
+  if (!thresholds) {
+    d_b <- d_b[!sort(is_threshold), ]
+  }
+
+  format_apa_parameters(
+    d_b,
+    predictor_parameters = predictor_parameters,
+    starred = starred,
+    bolded = bolded,
+    column_formats = column_formats,
+    t_with_df = t_with_df,
+    note = list(
+      vcov = describe_vcov(list(...)$vcov),
+      thresholds = if (thresholds && any(is_threshold)) link
+    )
+  )
+}
+
+#' @param random for mixed models, if `TRUE` (default), random-effect standard deviations and correlations (and the residual standard deviation, for linear mixed models) are displayed below the fixed effects.
+#' @details
+#' For mixed models fit with `lme4` (`lmer` and `glmer`), fixed effects are displayed as for `lm` and `glm` models. For linear mixed models, *t* tests and confidence intervals use Kenward-Roger degrees of freedom by default (`ci_method = "kenward"`, which requires the pbkrtest package); pass another `ci_method` (e.g., `"satterthwaite"`, which requires lmerTest, or `"wald"`) to change this. When the degrees of freedom differ across fixed effects, they are shown in a *df* column rather than in the *t* column header. Random-effect rows show only the estimated standard deviation (*SD*) or correlation (*r*), labeled by grouping factor.
+#' @export
+#' @rdname apa_parameters
+#' @examples
+#' \donttest{
+#' if (requireNamespace("lme4", quietly = TRUE) &&
+#'     requireNamespace("pbkrtest", quietly = TRUE)) {
+#'   lme4::lmer(Reaction ~ Days + (Days | Subject), data = lme4::sleepstudy) |>
+#'     apa_parameters()
+#' }
+#' }
+apa_parameters.merMod <- function(
+  fit,
+  predictor_parameters = c(
+    "Parameter",
+    "Coefficient",
+    "SE",
+    "Exp_Coefficient",
+    "t",
+    "z",
+    "df_error",
+    "p"
+  ),
+  starred = NA,
+  bolded = NA,
+  column_formats = NULL,
+  t_with_df = TRUE,
+  exponentiate = NULL,
+  random = TRUE,
+  ...
+) {
+  if (is.null(column_formats)) {
+    column_formats <- the$column_formats
+  }
+  names(predictor_parameters) <- NULL
+
+  dots <- list(...)
+  is_glmm <- inherits(fit, "glmerMod")
+  if (!is_glmm && is.null(dots$ci_method)) {
+    dots$ci_method <- "kenward"
+  }
+
+  d_b <- do.call(
+    parameters::model_parameters,
+    c(list(fit, effects = "fixed"), dots)
+  ) |>
+    tibble::as_tibble()
+
+  # Format variable names here, because random-effect labels are built below
+  name_formatter <- column_formats$Parameter@formatter
+  d_b$Parameter <- name_formatter(parameters::format_parameters(fit))
+
+  if (is_glmm) {
+    if (is.null(exponentiate)) {
+      exponentiate <- stats::family(fit)$link %in% c("logit", "log")
+    }
+    if (exponentiate) {
+      d_b <- add_exp_columns(d_b, predictor_parameters)
+      column_formats <- label_exp_columns(
+        column_formats,
+        exp_coefficient_label(fit)
+      )
+    }
+  }
+
+  # z tests have infinite df, which should not be displayed
+  if ("df_error" %in% colnames(d_b) && all(is.infinite(d_b$df_error))) {
+    d_b$df_error <- NULL
+  }
+
+  if (random) {
+    d_r <- parameters::model_parameters(fit, effects = "random", ci = NULL) |>
+      tibble::as_tibble()
+    is_cor <- startsWith(d_r$Parameter, "Cor ")
+    # Correlations have no leading zero; SDs are formatted like coefficients
+    coef_chr <- character(nrow(d_r))
+    coef_chr[is_cor] <- signs::signs(
+      d_r$Coefficient[is_cor],
+      accuracy = column_formats@accuracy,
+      trim_leading_zeros = TRUE
+    )
+    coef_chr[!is_cor] <- signs::signs(
+      d_r$Coefficient[!is_cor],
+      accuracy = column_formats@accuracy
+    )
+    fixed_chr <- signs::signs(d_b$Coefficient, accuracy = column_formats@accuracy)
+    d_b$Coefficient <- fixed_chr
+    d_b <- dplyr::bind_rows(
+      d_b,
+      tibble::tibble(
+        Parameter = random_effect_labels(d_r$Parameter, d_r$Group, name_formatter),
+        Coefficient = coef_chr
+      )
+    )
+  }
+
+  # Names were formatted above
+  column_formats$Parameter@formatter <- \(x, ...) x
+
+  format_apa_parameters(
+    d_b,
+    predictor_parameters = predictor_parameters,
+    starred = starred,
+    bolded = bolded,
+    column_formats = column_formats,
+    t_with_df = t_with_df,
+    note = list(df_method = if (!is_glmm) dots$ci_method)
+  )
+}
+
+#' Labels for random-effect parameters
+#'
+#' Converts `parameters` labels such as "SD (Days)", "Cor (Intercept~Days)",
+#' and "SD (Observations)" into "Subject: *SD* (Days)",
+#' "Subject: *r* (Constant, Days)", and "Residual *SD*".
+#' @param parameter random-effect parameter labels from `parameters`
+#' @param group grouping factor of each parameter
+#' @param formatter formats term names (e.g., "(Intercept)" to "Constant")
+#' @keywords internal
+#' @noRd
+random_effect_labels <- function(parameter, group, formatter) {
+  terms <- stringr::str_match(parameter, "^(SD|Cor) \\((.*)\\)$")
+  type <- terms[, 2]
+  inner <- terms[, 3]
+  purrr::pmap_chr(
+    list(type, inner, group, parameter),
+    \(type, inner, group, parameter) {
+      if (is.na(type)) {
+        return(parameter) # nocov
+      }
+      if (group == "Residual") {
+        return("Residual *SD*")
+      }
+      parts <- strsplit(inner, "~", fixed = TRUE)[[1]]
+      # parameters drops the parentheses around Intercept in these labels
+      parts[parts == "Intercept"] <- "(Intercept)"
+      parts <- formatter(parts)
+      symbol <- if (type == "SD") "*SD*" else "*r*"
+      paste0(
+        formatter(group),
+        ": ",
+        symbol,
+        " (",
+        paste(parts, collapse = ", "),
+        ")"
+      )
+    }
+  )
+}
+
+#' Add exponentiated coefficients and confidence limits
+#' @keywords internal
+#' @noRd
+add_exp_columns <- function(d_b, predictor_parameters) {
+  if ("Exp_Coefficient" %in% predictor_parameters) {
+    d_b$Exp_Coefficient <- exp(d_b$Coefficient)
+  }
+  if (
+    "Exp_CI" %in% predictor_parameters &&
+      all(c("CI_low", "CI_high") %in% colnames(d_b))
+  ) {
+    d_b$Exp_CI_low <- exp(d_b$CI_low)
+    d_b$Exp_CI_high <- exp(d_b$CI_high)
+  }
+  d_b
+}
+
+#' Label exponentiated columns (e.g., *OR*), unless the user customized them
+#' @param label named character vector with `header`, `latex`, and
+#'   (optionally) `abbreviation`
+#' @keywords internal
+#' @noRd
+label_exp_columns <- function(column_formats, label) {
+  if (
+    !is.null(column_formats$Exp_Coefficient) &&
+      identical(
+        column_formats$Exp_Coefficient@header,
+        the$columns$Exp_Coefficient@header
+      )
+  ) {
+    column_formats$Exp_Coefficient@header <- label[["header"]]
+    column_formats$Exp_Coefficient@latex <- label[["latex"]]
+    if ("abbreviation" %in% names(label)) {
+      column_formats$Exp_Coefficient@abbreviation <- label[["abbreviation"]]
+    }
+  }
+  if (
+    !is.null(column_formats$Exp_CI) &&
+      identical(column_formats$Exp_CI@header, the$columns$Exp_CI@header)
+  ) {
+    column_formats$Exp_CI@header <- paste0(
+      "{round(ci * 100)}% CI for ",
+      label[["header"]]
+    )
+    column_formats$Exp_CI@latex <- paste0(
+      "{round(ci * 100)}\\% CI for ",
+      label[["latex"]]
+    )
+  }
+  column_formats
+}
+
+#' @keywords internal
+#' @noRd
+exp_coefficient_label <- function(fit) {
+  fam <- stats::family(fit)
+  family <- tolower(fam$family)
+  if (fam$link == "logit") {
+    return(c(header = "*OR*", latex = "$OR$", abbreviation = "odds ratio"))
+  }
+  if (fam$link == "log") {
+    if (grepl("poisson|negative binomial", family)) {
+      return(c(
+        header = "*IRR*",
+        latex = "$IRR$",
+        abbreviation = "incidence rate ratio"
+      ))
+    }
+    if (grepl("binomial", family)) {
+      return(c(header = "*RR*", latex = "$RR$", abbreviation = "risk ratio"))
+    }
+  }
+  c(
+    header = the$columns$Exp_Coefficient@header,
+    latex = the$columns$Exp_Coefficient@latex
+  )
+}
+
+#' Format a model parameter tibble in APA style
+#'
+#' Shared by `apa_parameters` methods. `d_b` holds unformatted parameters with
+#' `Parameter` and `p` columns.
+#' @keywords internal
+#' @noRd
+format_apa_parameters <- function(
+  d_b,
+  predictor_parameters,
+  starred = NA,
+  bolded = NA,
+  column_formats = NULL,
+  t_with_df = TRUE,
+  note = list()
+) {
+  # Prevent warnings
+  pstar <- df_error <- header <- name <- NULL
+
+  # Get column formats
+  if (is.null(column_formats)) {
+    column_formats <- the$column_formats
+  }
+
+  # Make sure Parameter is in the predictor_parameters
+  if (!("Parameter" %in% predictor_parameters)) {
+    predictor_parameters <- c("Parameter", predictor_parameters) # nocov
+  }
+
+  names(predictor_parameters) <- NULL
+
   d_b_new <- d_b
 
-  # Put df into t column name
+  # Put df into t column name, if all parameters have the same df
   if (t_with_df) {
     if (
       all(c("t", "df_error") %in% colnames(d_b)) &&
         !is.null(column_formats$CI) &&
-        ("t" %in% predictor_parameters)
+        ("t" %in% predictor_parameters) &&
+        length(unique(round(stats::na.omit(d_b$df_error), 2))) == 1
     ) {
+      # e.g., t(29), or t(17.03) for fractional (e.g., Kenward-Roger) df
       df <- paste0(
         "(",
-        align_chr(max(d_b$df_error, na.rm = TRUE), accuracy = the$accuracy),
+        align_chr(
+          max(d_b$df_error, na.rm = TRUE),
+          accuracy = the$accuracy,
+          drop0trailing = TRUE
+        ),
         ")"
       )
       column_formats$t@header <- paste0(column_formats$t@header, df)
@@ -1240,8 +1922,38 @@ apa_parameters.lm <- function(
     }
   }
 
+  # Combine lower and upper bounds into one interval column. The CI level
+  # (e.g., .95) fills in the header template.
+  ci_columns <- c("CI", "Exp_CI")
+  ci_level <- 0.95
+  if ("CI" %in% colnames(d_b) && is.numeric(d_b$CI) && !all(is.na(d_b$CI))) {
+    ci_level <- d_b$CI[!is.na(d_b$CI)][1]
+  }
+  for (ci_col in ci_columns) {
+    bounds <- paste0(ci_col, c("_low", "_high"))
+    if (
+      ci_col %in% predictor_parameters &&
+        all(bounds %in% colnames(d_b)) &&
+        !is.null(column_formats[[ci_col]])
+    ) {
+      d_b_new[[ci_col]] <- column_formats[[ci_col]]@formatter(
+        d_b[[bounds[1]]],
+        d_b[[bounds[2]]]
+      )
+      column_formats[[ci_col]]@header <- as.character(
+        glue::glue(column_formats[[ci_col]]@header, ci = ci_level)
+      )
+      column_formats[[ci_col]]@latex <- as.character(
+        glue::glue(column_formats[[ci_col]]@latex, ci = ci_level)
+      )
+    } else {
+      # The CI column from parameters holds the CI level, not an interval
+      d_b_new[[ci_col]] <- NULL
+    }
+  }
+
   # Format columns
-  for (pr in predictor_parameters) {
+  for (pr in setdiff(predictor_parameters, ci_columns)) {
     if (!is.null(column_formats[[pr]])) {
       d_b_new <- dplyr::mutate(
         d_b_new,
@@ -1254,20 +1966,24 @@ apa_parameters.lm <- function(
   }
 
   # add starred column
-  if (length(starred > 0) && !is.na(starred) && all(starred != "")) {
+  starred <- starred[starred %in% colnames(d_b_new)]
+  is_starred <- length(starred) > 0 && !anyNA(starred) && all(starred != "")
+  if (is_starred) {
+    pstar <- p2stars(d_b$p, superscript = TRUE)
+    pstar[is.na(pstar)] <- ""
     d_b_new <- d_b_new |>
-      dplyr::mutate(pstar = p2stars(d_b$p, superscript = TRUE)) |>
-      tidyr::unite(
-        {{ starred }},
-        c({{ starred }}, pstar),
-        na.rm = TRUE,
-        sep = ""
-      ) |>
-      dplyr::mutate(dplyr::across(dplyr::any_of(starred), align_chr))
+      dplyr::mutate(
+        dplyr::across(
+          dplyr::all_of(starred),
+          \(x) align_chr(paste0(ifelse(is.na(x), "", x), pstar))
+        )
+      )
   }
 
   # bold star
-  if (length(bolded > 0) & !is.na(bolded) & (bolded != "")) {
+  is_bolded <- length(bolded) > 0 && !anyNA(bolded) && !all(bolded == "") &&
+    any(bolded %in% colnames(d_b_new))
+  if (is_bolded) {
     my_bold <- ifelse(d_b$p <= 0.05, "**", "")
     d_b_new <- d_b_new |>
       dplyr::mutate(
@@ -1286,91 +2002,106 @@ apa_parameters.lm <- function(
     dplyr::mutate(header = ifelse(is.na(header), name, header)) |>
     tibble::deframe()
 
-  d_b_new |>
-    dplyr::select(dplyr::any_of(pr_selector))
+  shown <- pr_selector[pr_selector %in% colnames(d_b_new)]
+  d_b_new <- dplyr::select(d_b_new, dplyr::any_of(pr_selector))
+  attr(d_b_new, "apa_note") <- parameters_note_record(
+    note,
+    headers = stats::setNames(names(shown), shown),
+    abbreviations = column_abbreviations(unname(shown), column_formats),
+    starred = is_starred,
+    bolded = is_bolded
+  )
+  as_apa7_tbl(d_b_new)
 }
 
 #' @export
 #' @rdname apa_parameters
 apa_parameters.list <- function(
   fit,
-  predictor_parameters = c(
-    "Parameter",
-    "Coefficient",
-    "SE",
-    "Std_Coefficient",
-    "t",
-    "df_error",
-    "p"
-  ),
-  starred = NA,
+  predictor_parameters = NULL,
+  starred = "deltaR2",
   bolded = NA,
   column_formats = NULL,
-  t_with_df = TRUE
+  t_with_df = TRUE,
+  performance_parameters = c("R2", "deltaR2"),
+  ...
 ) {
-  if (is.null(names(fit))) {
-    names(fit) <- paste("Model", seq(1, length(fit)))
-  }
-  purrr::map_df(
-    fit,
-    \(f1)
-      apa_parameters(
-        f1,
-        predictor_parameters = predictor_parameters,
-        column_formats = column_formats,
-        t_with_df = FALSE
-      ),
-    .id = "Model"
-  )
-}
+  # Prevent warnings
+  Model <- NULL
 
-#' print loadings
-#'
-#' @inheritParams apa_parameters
-#' @param sort_loading sort table using `psych::fa.sort`
-#' @param min_loading minimum loading to display
-#' @param complexity print complexity column in factor analysis table
-#' @param uniqueness print uniqueness column in factor analysis table
-#'
-#' @returns tibble
-#' @export
-#' @examples
-#' fit <- psych::fa(Harman74.cor$cov, 4, fm = "pa",rotate = "varimax")
-#' apa_loadings(fit) |>
-#'   `colnames<-`(c("Tests", "Verbal", "Spatial", "Quantitative", "Memory")) |>
-#'   apa_flextable()
-apa_loadings <- function(
-  fit,
-  sort_loading = TRUE,
-  min_loading = 0.2,
-  column_formats = NULL,
-  complexity = FALSE,
-  uniqueness = FALSE
-) {
-  Variable <- NULL
-  x <- fit |>
-    parameters::parameters(sort = sort_loading) |>
-    tibble::as_tibble()
-
-  if (!complexity) {
-    x$Complexity <- NULL
-  }
-
-  if (!uniqueness) {
-    x$Uniqueness <- NULL
-  }
-
-  x |>
-    dplyr::mutate(
-      dplyr::across(-Variable, \(x) {
-        new_x <- align_chr(x, trim_leading_zeros = TRUE)
-        if (!is.na(min_loading)) {
-          new_x[abs(x) < min_loading] <- NA
-        }
-
-        new_x
-      })
+  # Mixed models also show the conditional R2 and its change by default
+  if (
+    missing(performance_parameters) &&
+      all(purrr::map_lgl(fit, \(m) inherits(m, "merMod")))
+  ) {
+    performance_parameters <- c(
+      "R2",
+      "deltaR2",
+      "R2_conditional",
+      "deltaR2_conditional"
     )
+  }
+
+  # List names label the models ("Model 1", ... if unnamed)
+  names(fit) <- model_names(fit)
+  model_tables <- purrr::map(
+    fit,
+    \(f1) {
+      args <- list(
+        f1,
+        column_formats = column_formats,
+        t_with_df = FALSE,
+        starred = starred,
+        bolded = bolded,
+        ...
+      )
+      # If NULL, use the default predictor_parameters of each model's method
+      if (!is.null(predictor_parameters)) {
+        args$predictor_parameters <- predictor_parameters
+      }
+      do.call(apa_parameters, args)
+    }
+  )
+  d_fit <- dplyr::bind_rows(model_tables, .id = "Model")
+
+  # Each model was aligned separately; re-align values across all models.
+  # Skip Model and the variable-name column that follows it.
+  value_columns <- setdiff(colnames(d_fit), colnames(d_fit)[1:2])
+  ci_value_columns <- value_columns[purrr::map_lgl(d_fit[value_columns], is_ci_md)]
+  d_fit <- d_fit |>
+    dplyr::mutate(
+      dplyr::across(dplyr::all_of(ci_value_columns), realign_ci),
+      dplyr::across(
+        dplyr::all_of(setdiff(value_columns, ci_value_columns)) &
+          dplyr::where(is.character),
+        align_chr
+      )
+    )
+
+  show_performance <- !(is.null(performance_parameters) ||
+    length(performance_parameters) == 0 ||
+    all(is.na(performance_parameters)))
+  if (show_performance) {
+    d_fit <- d_fit |>
+      flextable::as_grouped_data(groups = "Model") |>
+      dplyr::left_join(
+        apa_performance_comparison(
+          fit,
+          metrics = performance_parameters,
+          starred = starred
+        ),
+        by = dplyr::join_by(Model)
+      ) |>
+      dplyr::mutate(dplyr::across(.cols = dplyr::where(is.character), \(x) dplyr::replace_values(x, from = NA, to = "")))
+  }
+
+  attr(d_fit, "apa_note") <- merge_parameters_note_records(
+    purrr::map(model_tables, \(x) attr(x, "apa_note", exact = TRUE)),
+    performance = if (show_performance) performance_parameters,
+    performance_starred = show_performance && any(starred %in% performance_parameters),
+    column_formats = column_formats
+  )
+  as_apa7_tbl(d_fit)
 }
 
 #' format model performance metrics in APA style
@@ -1407,14 +2138,21 @@ apa_performance.lm <- function(
 
   header <- name <- NULL
 
-  if (is.null(column_formats)) column_formats <- the$column_formats
+  if (is.null(column_formats)) {
+    column_formats <- the$column_formats
+  }
 
   names(metrics) <- NULL
 
-  prs <- column_formats@get_tibble
-
   d <- performance::model_performance(fit, metrics = "all") |>
     tibble::as_tibble()
+
+  # GLMs report a pseudo-R2 under its own name
+  pr2 <- use_pseudo_r2(d, column_formats)
+  d <- pr2$data
+  column_formats <- pr2$column_formats
+
+  prs <- column_formats@get_tibble
 
   d_new <- d
 
@@ -1440,14 +2178,154 @@ apa_performance.lm <- function(
     tibble::deframe()
 
   d_new |>
-    dplyr::select(dplyr::any_of(pr_selector))
+    dplyr::select(dplyr::any_of(pr_selector)) |>
+    as_apa7_tbl()
+}
+
+#' @details
+#' For `glm` objects, `R2` is the pseudo-*R*^2^ that [performance::r2()] selects for the model family (e.g., Tjur's *R*^2^ for logistic regression and Nagelkerke's *R*^2^ for count models). The header names the pseudo-*R*^2^ that was used. Because the residual standard deviation is not meaningful for most GLMs, the default metrics are `R2` and `AIC`.
+#' @export
+#' @rdname apa_performance
+apa_performance.glm <- function(
+  fit,
+  metrics = c("R2", "AIC"),
+  column_formats = NULL
+) {
+  apa_performance.lm(fit, metrics = metrics, column_formats = column_formats)
+}
+
+#' @export
+#' @rdname apa_performance
+apa_performance.polr <- apa_performance.glm
+
+#' @export
+#' @rdname apa_performance
+apa_performance.clm <- apa_performance.glm
+
+#' @details
+#' For mixed models (`lme4::lmer` and `lme4::glmer`), the default metrics are the marginal *R*^2^ (variance explained by the fixed effects), the conditional *R*^2^ (fixed and random effects), and the intraclass correlation (ICC), as computed by [performance::model_performance()].
+#' @export
+#' @rdname apa_performance
+apa_performance.merMod <- function(
+  fit,
+  metrics = c("R2_marginal", "R2_conditional", "ICC"),
+  column_formats = NULL
+) {
+  apa_performance.lm(fit, metrics = metrics, column_formats = column_formats)
+}
+
+#' @details
+#' For a list of models, each model's metrics are displayed in a row, labeled in a `Model` column by the list's names (or "Model 1", "Model 2", ... for unnamed elements). If `metrics` is `NULL` (default), each model's default metrics are used.
+#' @export
+#' @rdname apa_performance
+#' @examples
+#' list(
+#'   `Cylinders` = lm(mpg ~ cyl, data = mtcars),
+#'   `Cylinders and weight` = lm(mpg ~ cyl + wt, data = mtcars)
+#' ) |>
+#'   apa_performance()
+apa_performance.list <- function(
+  fit,
+  metrics = NULL,
+  column_formats = NULL
+) {
+  Model <- NULL
+  names(fit) <- model_names(fit)
+  d <- purrr::map_df(
+    fit,
+    \(f1) {
+      args <- list(f1, column_formats = column_formats)
+      if (!is.null(metrics)) {
+        args$metrics <- metrics
+      }
+      tibble::as_tibble(do.call(apa_performance, args))
+    },
+    .id = "Model"
+  )
+  # Each model was aligned separately; re-align values across models
+  d |>
+    dplyr::mutate(
+      dplyr::across(
+        !dplyr::all_of("Model") & dplyr::where(is.character),
+        align_chr
+      )
+    ) |>
+    as_apa7_tbl()
+}
+
+#' Use a pseudo-R2 as the R2 column
+#'
+#' `performance` names pseudo-R2 columns by type (e.g., `R2_Tjur`). Copies the
+#' first one found into `R2` and labels the `R2` and `deltaR2` headers with the
+#' type, unless `R2` already exists or the headers were customized.
+#' @keywords internal
+#' @noRd
+use_pseudo_r2 <- function(data, column_formats) {
+  pseudo <- c(
+    R2_Tjur = "Tjur",
+    R2_Nagelkerke = "Nagelkerke",
+    R2_McFadden = "McFadden",
+    R2_CoxSnell = "Cox\u2013Snell",
+    # Mixed models: variance explained by the fixed effects
+    R2_marginal = "marginal"
+  )
+  found <- intersect(names(pseudo), colnames(data))
+  if ("R2" %in% colnames(data) || length(found) == 0) {
+    return(list(data = data, column_formats = column_formats))
+  }
+  found <- found[1]
+  data$R2 <- data[[found]]
+  label <- pseudo[[found]]
+  for (cl in c("R2", "deltaR2")) {
+    if (
+      !is.null(column_formats[[cl]]) &&
+        identical(column_formats[[cl]]@header, the$columns[[cl]]@header)
+    ) {
+      column_formats[[cl]]@header <- paste0(
+        column_formats[[cl]]@header,
+        "~",
+        label,
+        "~"
+      )
+      column_formats[[cl]]@latex <- sub(
+        "\\$$",
+        paste0("_{\\\\text{", label, "}}$"),
+        column_formats[[cl]]@latex
+      )
+    }
+  }
+  list(data = data, column_formats = column_formats)
+}
+
+#' Does a model have a fixed dispersion parameter?
+#'
+#' Nested models with fixed dispersion (binomial, Poisson, negative binomial,
+#' and ordinal cumulative link models) are compared with likelihood ratio tests
+#' rather than F tests.
+#' @keywords internal
+#' @noRd
+has_fixed_dispersion <- function(fit) {
+  # Nested mixed models are also compared with likelihood ratio tests
+  if (inherits(fit, c("polr", "clm", "merMod"))) {
+    return(TRUE)
+  }
+  if (!inherits(fit, "glm")) {
+    return(FALSE)
+  }
+  family <- stats::family(fit)$family
+  family %in% c("binomial", "poisson") ||
+    startsWith(family, "Negative Binomial")
 }
 
 #' format model comparison metrics in APA style
 #'
-#' @param ... model fit objects
-#' @param metrics performance metrics. Default is R2, deltaR2, F, and p
+#' @param ... model fit objects, or a list of them. Models are labeled by the list's names (or the argument names), and "Model 1", "Model 2", ... for unnamed models.
+#' @param metrics performance metrics. If `NULL` (default), R2, deltaR2, F, and p for models with an estimated dispersion parameter (e.g., `lm`, Gaussian or quasi-family `glm`), and R2, deltaR2, Chi2, df, and p for GLMs with a fixed dispersion parameter (binomial, Poisson, negative binomial). Use "all" for all available metrics.
 #' @param starred columns to star with significant p_values
+#' @details
+#' Nested models are compared with *F* tests ([performance::test_wald()]) unless every model is a GLM with a fixed dispersion parameter, in which case likelihood ratio tests ([performance::test_likelihoodratio()]) are used. For GLMs, `R2` is the pseudo-*R*^2^ that [performance::r2()] selects for the model family, and the header names it (e.g., *R*^2^~Tjur~).
+#'
+#' Mixed models (`lme4::lmer` and `lme4::glmer`) are compared with likelihood ratio tests. `R2` is the marginal *R*^2^ (variance explained by the fixed effects), and by default the conditional *R*^2^ (fixed and random effects) and its change (`R2_conditional`, `deltaR2_conditional`) are shown too, because adding random effects changes the conditional but not the marginal *R*^2^.
 #' @param column_formats column_formats object to format columns. If NULL, the default column_formats is used.
 #'
 #' @return tibble
@@ -1460,26 +2338,10 @@ apa_performance.lm <- function(
 #'    apa_flextable()
 apa_performance_comparison <- function(
   ...,
-  metrics = c("R2", "deltaR2", "F", "p"),
+  metrics = NULL,
   starred = NA,
   column_formats = NULL
 ) {
-  if (any(metrics == "all")) {
-    metrics <- c(
-      "R2",
-      "deltaR2",
-      "R2_adjusted",
-      "RMSE",
-      "Sigma",
-      "AIC",
-      "AICc",
-      "BIC",
-      "F",
-      "df",
-      "p"
-    )
-  }
-
   R2 <- Model <- pstar <- df <- df_diff <- Name <- NULL
 
   if (is.null(column_formats)) {
@@ -1488,27 +2350,83 @@ apa_performance_comparison <- function(
 
   .dots <- rlang::list2(...)
 
-  t_wald <- performance::test_wald(...) |>
-    tibble::as_tibble()
+  # Models may be passed individually or as a single (unclassed) list
+  models <- .dots
+  if (length(.dots) == 1 && is.list(.dots[[1]]) && !is.object(.dots[[1]])) {
+    models <- .dots[[1]]
+  }
+  use_lrt <- all(purrr::map_lgl(models, has_fixed_dispersion))
+  # Mixed models have marginal and conditional R2
+  is_mixed <- all(purrr::map_lgl(models, \(m) inherits(m, "merMod")))
+  conditional_r2 <- if (is_mixed) c("R2_conditional", "deltaR2_conditional")
 
-  cp <- performance::compare_performance(..., metrics = "all") |>
-    tibble::as_tibble()
-
-  if ("deltaR2" %in% metrics) {
-    cp <- cp |>
-      dplyr::mutate(
-        deltaR2 = ifelse(
-          is.na(dplyr::lag(R2)),
-          R2,
-          R2 - dplyr::lag(R2)
-        )
-      )
+  if (is.null(metrics)) {
+    metrics <- if (use_lrt) {
+      c("R2", "deltaR2", conditional_r2, "Chi2", "df", "p")
+    } else {
+      c("R2", "deltaR2", "F", "p")
+    }
   }
 
-  cp <- cp |>
-    dplyr::left_join(t_wald, by = dplyr::join_by(Name, Model))
+  if (any(metrics == "all")) {
+    metrics <- c(
+      "R2",
+      "deltaR2",
+      conditional_r2,
+      "R2_adjusted",
+      "RMSE",
+      # Sigma is fixed at 1 when dispersion is fixed
+      if (!use_lrt) "Sigma",
+      "AIC",
+      "AICc",
+      "BIC",
+      if (use_lrt) "Chi2" else "F",
+      "df",
+      "p"
+    )
+  }
 
-  if (length(starred > 0) & !is.na(starred) & (starred != "")) {
+  if (length(.dots[[1]]) > 1) {
+
+    cp <- performance::compare_performance(..., metrics = "all") |>
+      tibble::as_tibble()
+
+    pr2 <- use_pseudo_r2(cp, column_formats)
+    cp <- pr2$data
+    column_formats <- pr2$column_formats
+
+    # Likelihood ratio tests for fixed-dispersion GLMs, F tests otherwise
+    t_nested <- if (use_lrt) {
+      performance::test_likelihoodratio(...)
+    } else {
+      performance::test_wald(...)
+    }
+    t_nested <- tibble::as_tibble(t_nested) |>
+      dplyr::select(-dplyr::any_of("Criterion"))
+
+    if ("deltaR2" %in% metrics) {
+      cp <- cp |>
+        dplyr::mutate(deltaR2 = ifelse(is.na(dplyr::lag(R2)), R2, R2 - dplyr::lag(R2)))
+    }
+    if (
+      "deltaR2_conditional" %in% metrics &&
+        "R2_conditional" %in% colnames(cp)
+    ) {
+      r2c <- cp$R2_conditional
+      cp$deltaR2_conditional <- ifelse(
+        is.na(dplyr::lag(r2c)),
+        r2c,
+        r2c - dplyr::lag(r2c)
+      )
+    }
+    cp <- cp |>
+      dplyr::left_join(t_nested, by = dplyr::join_by(Name, Model))
+  } else {
+    cp <- performance::performance(.dots[[1]], metrics = "all")
+  }
+
+  starred <- starred[starred %in% colnames(cp)]
+  if (length(starred > 0) && !is.na(starred) && (starred != "")) {
     p_empty <- is.na(cp$p)
     cp <- cp |>
       dplyr::mutate(pstar = p2stars(cp$p, superscript = TRUE)) |>
@@ -1525,9 +2443,19 @@ apa_performance_comparison <- function(
         sep = ""
       )
     cp[p_empty, starred] <- NA
+    # Leave every change column blank where there is no test of the change
+    delta_columns <- intersect(c("deltaR2", "deltaR2_conditional"), colnames(cp))
+    if (any(starred %in% delta_columns)) {
+      cp[p_empty, delta_columns] <- NA
+    }
   }
 
-  if (all(c("df", "df_diff") %in% colnames(cp))) {
+  if ("Chi2" %in% colnames(cp) && all(c("df", "df_diff") %in% colnames(cp))) {
+    # Chi-square tests report only the df of the difference
+    cp$df <- align_chr(abs(cp$df_diff), accuracy = the$accuracy)
+    cp$df[is.na(cp$df_diff)] <- NA
+    cp$df_diff <- NULL
+  } else if (all(c("df", "df_diff") %in% colnames(cp))) {
     cp <- cp |>
       dplyr::mutate(
         dplyr::across(c(df_diff, df), .fns = \(x) {
@@ -1542,9 +2470,34 @@ apa_performance_comparison <- function(
     cp$df_diff <- NULL
   }
 
+
+  # Use the names of a named list (or of named arguments) as model labels
+  model_labels <- model_names(models)
+  if (length(model_labels) != nrow(cp)) {
+    model_labels <- paste("Model", seq_len(nrow(cp))) # nocov
+  }
+
   cp |>
     dplyr::select(Model = Name, dplyr::any_of(metrics)) |>
-    apa_format_columns(column_formats)
+    dplyr::mutate(Model = model_labels) |>
+    apa_format_columns(column_formats) |>
+    as_apa7_tbl()
+}
+
+#' Labels for a list of models
+#'
+#' Uses the list's names, and "Model 1", "Model 2", ... for unnamed elements.
+#' @keywords internal
+#' @noRd
+model_names <- function(models) {
+  default <- paste("Model", seq_along(models))
+  labels <- names(models)
+  if (is.null(labels)) {
+    return(default)
+  }
+  unnamed <- is.na(labels) | labels == ""
+  labels[unnamed] <- default[unnamed]
+  labels
 }
 
 # apa_style <- function(x,
@@ -1730,6 +2683,12 @@ apa_style <- function(
 
   pd <- (line_spacing - 1) * font_size * 2 / 3
 
+  # Typst sizes a line from cap height to baseline (about 0.66em) instead of
+  # ascender to descender (about 1.15em in Word), so add the difference.
+  if (isTRUE(knitr::pandoc_to("typst"))) {
+    pd <- pd + font_size * 0.245
+  }
+
   break_keys <- x$col_keys[grepl("^apa7breakcolumn", x$col_keys)]
   break_labels <- rep(" ", length(break_keys))
   names(break_labels) <- break_keys
@@ -1849,13 +2808,11 @@ apa_style <- function(
     dt <- x$header$content$data
     hh <- character(0)
     md_keys <- x$col_keys[
-      !(
-        x$col_keys %in%
-          unique(c(listcolumn_keys, break_keys, no_markdown_columns_header))
-      )
+      !(x$col_keys %in%
+        unique(c(listcolumn_keys, break_keys, no_markdown_columns_header)))
     ]
     for (ch in md_keys) {
-      if (!("chunk" %in% class(dt$header$content$data[[1, ch]]))) {
+      if (!(inherits(dt$header$content$data[[1, ch]], "chunk"))) {
         hh <- c(hh, ch)
       }
     }
@@ -1871,13 +2828,11 @@ apa_style <- function(
     dt <- x$body$content$data
     hh <- character(0)
     md_keys <- x$col_keys[
-      !(
-        x$col_keys %in%
-          unique(c(listcolumn_keys, break_keys, no_markdown_columns))
-      )
+      !(x$col_keys %in%
+        unique(c(listcolumn_keys, break_keys, no_markdown_columns)))
     ]
     for (ch in md_keys) {
-      if (!("chunk" %in% class(dt$body$content$data[[1, ch]]))) {
+      if (!(inherits(dt$body$content$data[[1, ch]], "chunk"))) {
         hh <- c(hh, ch)
       }
     }
@@ -1913,8 +2868,7 @@ pretty_widths <- function(
   unit <- match.arg(unit, choices = c("in", "cm", "mm"))
   pwidth <- flextable::dim_pretty(x, unit = unit)$widths
   pwidth[pwidth < min_width] <- min_width
-  if (is.null(table_width) || is.na(table_width) || table_width == 0) {
-  } else {
+  if (is.null(table_width) || is.na(table_width) || table_width == 0) {} else {
     # Are there breaks and lists?
     break_keys <- grepl("^apa7breakcolumn", x$col_keys)
     listcolumn_keys <- x$col_keys[grepl("apa7listcolumn$", x$col_keys)]

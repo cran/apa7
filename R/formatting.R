@@ -5,7 +5,7 @@
 #' @param trim_leading_zeros if TRUE (default), trims leading zeros, otherwise keeps them
 #' @param drop0trailing Drop trailing zeros
 #' @param add_plusses if TRUE (default), adds a plus to positive numbers
-#' @param padding_character character to use for padding, default is `&numsp;` (figure space)
+#' @param padding_character character to use for padding, default is `&numsp;` (figure space). With the default, text is padded to equal rendered width in the default font family (see [num_pad()] and the `width_aware_padding` argument of [apa7_defaults()]).
 #' @param center text on which to align text. Center on decimal by default, but can be any text.
 #' @param format_integers If TRUE, integers will be formatted with digits
 #' @param side side on which to make text of equal width
@@ -33,26 +33,46 @@ align_chr <- function(
   ...
 ) {
   if (is.null(padding_character)) {
+    # Default padding character is a figure space
     padding_character <- "\u2007"
   }
-  center1 <- center
-  if (center1 == ".") center1 <- "\\."
 
-  if (is.null(accuracy)) accuracy <- the$accuracy
+  # With figure-space padding, pad to equal rendered width in the default font
+  pad_font <- NA
+  if (
+    isTRUE(the$width_aware_padding) &&
+      padding_character %in% c("\u2007", "&numsp;")
+  ) {
+    pad_font <- the$font_family
+  }
+  center1 <- center
+  if (center1 == ".") {
+    center1 <- "\\."
+  }
+
+  if (is.null(accuracy)) {
+    accuracy <- the$accuracy
+  }
+
+  # Use xx to make changes, keep x pristine
   xx <- x
 
+  # Trim spaces
   if (is.character(x)) {
     xx <- stringr::str_trim(xx)
   }
 
+  # On which side to align
   side <- match.arg(side, c("both", "left", "right"))
 
+  # If character text is all numbers, make numeric
   if (is.character(xx) && format_numeric_character) {
     if (all(grepl("^[-0-9.]+$", xx))) {
       xx <- as.numeric(xx)
     }
   }
 
+  # If x is all integers, then do not add decimals
   if (
     (rlang::is_integerish(x) || rlang::is_integerish(xx)) && !format_integers
   ) {
@@ -62,7 +82,8 @@ align_chr <- function(
         add_plusses = add_plusses,
         big.mark = ","
       ),
-      padding_character = padding_character
+      padding_character = padding_character,
+      font_family = pad_font
     )
   } else {
     if (is.numeric(xx)) {
@@ -97,7 +118,8 @@ align_chr <- function(
       left_x <- num_pad(
         left_x,
         padding_character = padding_character,
-        NA_value = ""
+        NA_value = "",
+        font_family = pad_font
       )
     }
 
@@ -106,18 +128,25 @@ align_chr <- function(
         right_x,
         pad_left = FALSE,
         padding_character = padding_character,
-        NA_value = ""
+        NA_value = "",
+        font_family = pad_font
       )
     }
 
+    # Make middle text equal to center
     middle <- paste0(center, rep("", length(xx)))
 
+    # Remove center text if splitter is not detected
     middle[!stringr::str_detect(xx, splitter)] <- ""
 
+    # Remove center text if xx is NA
     middle[is.na(xx)] <- ""
 
+    # combine left, middle, and right text
     xx <- paste0(left_x, middle, right_x)
   }
+
+  # Make NA if original x is NA, zero-length, or empty
   xx[is.na(x) | nchar(x) == 0 | x == ""] <- NA_value
 
   xx
@@ -171,7 +200,10 @@ apa_p <- function(
 
   if (is.character(p)) {
     p <- stringr::str_trim(p)
-    less_than <- stringr::str_detect(p, "<")
+    less_than <- stringr::str_detect(
+      string = p,
+      pattern = stringr::fixed("<",
+                               ignore_case = TRUE))
     p <- stringr::str_remove(p, "^<") |> as.numeric()
     p[less_than] <- 10^(-max_digits - 1)
   }
@@ -196,12 +228,14 @@ apa_p <- function(
     trim_leading_zeros = TRUE,
     accuracy = max_p
   )
-  p_threshold <- max_p - max_p * .05
-  max_p_threshold <- 1 - max_p * .5
+  p_threshold <- max_p - max_p * 0.05
+  max_p_threshold <- 1 - max_p * 0.5
 
   digit <- ifelse(p < p_threshold, max_digits, min_digits)
   p_formatted <- purrr::map2_chr(p, digit, function(pp, dd) {
-    if (is.na(pp)) return(NA)
+    if (is.na(pp)) {
+      return(NA)
+    }
     formatC(round(pp, dd + 1), digits = dd, format = "f")
   })
 
@@ -244,9 +278,10 @@ apa_p <- function(
 #'
 #' @examples
 #' apa_p_star_note()
-#' apa_p_star_note(x = c(.10, .05, .01, .001), first_alpha_marginal = TRUE)
+#' apa_p_star_note(x = c(0.10, 0.05, 0.01, 0.001),
+#'                 first_alpha_marginal = TRUE)
 apa_p_star_note <- function(
-  x = c(.05, .01, .001),
+  x = c(0.05, 0.01, 0.001),
   first_alpha_marginal = FALSE
 ) {
   paste0(
@@ -262,7 +297,7 @@ apa_p_star_note <- function(
       x,
       trim_leading_zeros = TRUE,
       drop0trailing = TRUE,
-      accuracy = .001
+      accuracy = 0.001
     ),
     collapse = ". "
   )
@@ -394,42 +429,271 @@ is_numeric_like <- function(x, elementwise = FALSE) {
 
 #' Pads text on the left or right so that the width is the same for each element of the vector
 #'
+#' By default, text is padded with one `padding_character` per missing visible character. Markdown markup (e.g., `**`, `*`, `^`, `~`, and backslash escapes) is not counted. If `font_family` names an installed font, text is instead padded to equal *rendered* width in that font, using a combination of figure, punctuation, thin, and hair spaces (`padding_character` is then ignored). Superscripts and subscripts are measured at 2/3 of the font size.
+#'
 #' @param x vector of text
 #' @param pad_left if TRUE (default), pads on the left, otherwise pads on the right
 #' @param padding_character character to use for padding, default is `&numsp;` (figure space)
 #' @param NA_value value to replace NA
+#' @param font_family font in which to measure text widths. If `NULL` (default) or `NA`, or if the font is not installed, widths are counted in characters.
 #'
 #' @return character vector
 #' @export
 #'
 #' @examples
 #' num_pad(c("a", "bb"))
+#' num_pad(c(paste0(intToUtf8(8722), "1"), "1"), font_family = "Times New Roman")
 num_pad <- function(
   x,
   pad_left = TRUE,
   padding_character = "&numsp;",
-  NA_value = ""
+  NA_value = "",
+  font_family = NULL
 ) {
-  nch <- nchar(x)
-  gtcount <- stringr::str_count(x, "\\>")
-  gtcount[is.na(gtcount)] <- 0
-  starcount <- stringr::str_count(x, "\\*")
-  starcount[is.na(starcount)] <- 0
-  nch <- nch - gtcount - starcount
-  nch[is.na(nch)] <- 0
+  width_aware <- !is.null(font_family) &&
+    !is.na(font_family) &&
+    font_available(font_family)
+
+  if (width_aware) {
+    w <- md_text_width(x, font_family)
+    pad_chr <- space_fill(max(w) - w, font_family)
+  } else {
+    nch <- nchar(md_visible_text(x))
+    nch[is.na(x)] <- 0
+    pad_chr <- strrep(padding_character, max(nch) - nch)
+  }
 
   x[is.na(x)] <- NA_value
 
-  max_nch <- max(nch)
-  pad_nch <- max_nch - nch
-  pad_chr <- purrr::map_chr(pad_nch, \(t) {
-    paste0(rep(padding_character, t), collapse = "")
-  })
   if (pad_left) {
     paste0(pad_chr, x)
   } else {
     paste0(x, pad_chr)
   }
+}
+
+# Width-aware padding ----
+
+# Spaces used to fill padding, widest first
+padding_spaces <- c(
+  figure = "\u2007",
+  punctuation = "\u2008",
+  thin = "\u2009",
+  hair = "\u200a"
+)
+
+md_entities <- c(
+  "&numsp;" = "\u2007",
+  "&puncsp;" = "\u2008",
+  "&thinsp;" = "\u2009",
+  "&hairsp;" = "\u200a",
+  "&nbsp;" = "\u00a0",
+  "&minus;" = "\u2212",
+  "&times;" = "\u00d7",
+  "&lt;" = "<",
+  "&gt;" = ">",
+  "&amp;" = "&"
+)
+
+#' Visible text of markdown, with scripts marked
+#'
+#' Removes emphasis markers and backslash escapes and converts common HTML
+#' entities. Superscripts (`^x^`) and subscripts (`~x~`) are kept with their
+#' delimiters so callers can measure them separately.
+#' @keywords internal
+#' @noRd
+md_strip <- function(x) {
+  x <- as.character(x)
+  x[is.na(x)] <- ""
+  x <- stringr::str_replace_all(x, stringr::fixed(md_entities))
+  # Other entities (e.g., &sigma;) are one glyph; approximate with "x"
+  x <- stringr::str_replace_all(x, "&[A-Za-z0-9#]+;", "x")
+  # Protect escaped characters, then drop unescaped emphasis markers
+  x <- stringr::str_replace_all(x, "\\\\\\*", "\u0001")
+  x <- stringr::str_remove_all(x, "\\*")
+  x <- stringr::str_replace_all(x, "\\\\(.)", "\\1")
+  stringr::str_replace_all(x, "\u0001", "*")
+}
+
+#' Visible text of markdown (scripts flattened)
+#' @keywords internal
+#' @noRd
+md_visible_text <- function(x) {
+  out <- stringr::str_remove_all(md_strip(x), "[\\^~]")
+  out[is.na(x)] <- NA
+  out
+}
+
+#' Width of text in em
+#'
+#' Sums the advance widths of individual characters, ignoring kerning. Word
+#' does not kern body text by default, and Times New Roman kerns some digit
+#' pairs (e.g., "11"), so kerned widths would misalign Word tables.
+#' @keywords internal
+#' @noRd
+string_width_em <- function(x, font_family) {
+  out <- numeric(length(x))
+  has_text <- !is.na(x) & nzchar(x)
+  if (any(has_text)) {
+    size <- 1000
+    chars <- strsplit(x[has_text], "")
+    glyphs <- unique(unlist(chars))
+    glyph_width <- systemfonts::string_width(
+      glyphs,
+      family = font_family,
+      size = size,
+      res = 72
+    ) / size
+    names(glyph_width) <- glyphs
+    out[has_text] <- vapply(chars, \(g) sum(glyph_width[g]), numeric(1))
+  }
+  out
+}
+
+#' Rendered width of markdown text in em
+#'
+#' Superscripts and subscripts are measured at `script_scale` times the font size.
+#' @keywords internal
+#' @noRd
+md_text_width <- function(
+  x,
+  font_family = the$font_family,
+  script_scale = the$script_scale
+) {
+  script_re <- "\\^[^\\^]*\\^|~[^~]*~"
+  s <- md_strip(x)
+  scripts <- stringr::str_extract_all(s, script_re) |>
+    purrr::map_chr(\(p) stringr::str_remove_all(paste0(p, collapse = ""), "[\\^~]"))
+  base <- stringr::str_remove_all(s, script_re)
+  string_width_em(base, font_family) +
+    script_scale * string_width_em(scripts, font_family)
+}
+
+#' Is a font installed?
+#' @keywords internal
+#' @noRd
+font_available <- function(font_family) {
+  if (is.null(the$font_available)) {
+    the$font_available <- list()
+  }
+  if (is.null(the$font_available[[font_family]])) {
+    families <- c(
+      systemfonts::system_fonts()$family,
+      systemfonts::registry_fonts()$family
+    )
+    the$font_available[[font_family]] <- tolower(font_family) %in%
+      tolower(families)
+  }
+  the$font_available[[font_family]]
+}
+
+#' Spaces that fill a width
+#'
+#' Uses as many figure spaces as fit, then the combination of punctuation,
+#' thin, and hair spaces that best fills the remainder.
+#' @param deficit width to fill, in em
+#' @keywords internal
+#' @noRd
+space_fill <- function(deficit, font_family) {
+  w <- string_width_em(padding_spaces, font_family)
+  names(w) <- names(padding_spaces)
+  combos <- expand.grid(punctuation = 0:1, thin = 0:2, hair = 0:5)
+  combos$width <- as.matrix(combos) %*% w[names(combos)]
+  combos$n <- rowSums(combos[, c("punctuation", "thin", "hair")])
+  # Fewest characters among the most accurate combinations
+  combos <- combos[order(combos$n), ]
+
+  purrr::map_chr(deficit, \(d) {
+    if (is.na(d) || d <= 0) {
+      return("")
+    }
+    n_figure <- floor(d / w[["figure"]] + 1e-6)
+    remainder <- d - n_figure * w[["figure"]]
+    best <- combos[which.min(round(abs(remainder - combos$width), 4)), ]
+    paste0(
+      strrep(padding_spaces[["figure"]], n_figure),
+      strrep(padding_spaces[["punctuation"]], best$punctuation),
+      strrep(padding_spaces[["thin"]], best$thin),
+      strrep(padding_spaces[["hair"]], best$hair)
+    )
+  })
+}
+
+#' Scientific notation for markdown
+#'
+#' @param x Numeric vector
+#' @param digits number of digits of precision
+#' @param lb lower bound where scientific notation is turned on
+#' @param ub upper bound where scientific notation is turned on
+#' @param align decimal align
+#'
+#' @returns A character vector
+#' @export
+#'
+#' @examples
+#' sci_md(c(.0045,1.44, 24567857.45))
+sci_md <- function(x, digits = 2, lb = 0.0095, ub = 99.5, align = FALSE) {
+  x_sci <- formatC(x, digits = digits, format = "e")
+  x_sci_left <- stringr::str_split_i(x_sci, pattern = "e", i = 1)
+  x_sci_right <- stringr::str_split_i(x_sci, pattern = "e", i = 2) |>
+    as.numeric() |>
+    signs::signs()
+
+  x_md <- formatC(x, digits = digits, format = "f")
+
+  out_range <- which(x >= ub | x <= lb)
+  x_sci_right[out_range] <- paste0("\u00D7", "10^", x_sci_right[out_range], "^")
+
+  # Values within the bounds use fixed notation, not the mantissa alone
+  in_range <- !is.na(x) & x > lb & x < ub
+  x_sci_md <- paste0(x_sci_left, x_sci_right)
+  x_sci_md[in_range] <- x_md[in_range]
+  x_sci_md[is.na(x)] <- NA
+
+  if (align) {
+    x_sci_md <- align_chr(x_sci_md)
+  }
+
+  x_sci_md
+}
+
+#' Combine formatted interval bounds into "\[LL, UL\]"
+#'
+#' `l` and `u` are already formatted and aligned. Rows flagged in `missing`
+#' are blank.
+#' @keywords internal
+#' @noRd
+ci_md <- function(l, u, missing = FALSE) {
+  middle <- rep(", ", length(l))
+  middle[missing] <- ""
+  l[missing] <- ""
+  u[missing] <- ""
+  align_chr(paste0(l, middle, u), center = ", ") |>
+    tagger("[", "]")
+}
+
+#' Re-align formatted "\[LL, UL\]" intervals
+#'
+#' Used when intervals formatted separately (e.g., one table per model) are
+#' stacked into one column.
+#' @keywords internal
+#' @noRd
+realign_ci <- function(x) {
+  missing <- is.na(x) | !nzchar(stringr::str_trim(x))
+  inner <- stringr::str_remove_all(x, "^\\[|\\]$")
+  ci_md(
+    align_chr(stringr::str_split_i(inner, ", ", 1)),
+    align_chr(stringr::str_split_i(inner, ", ", 2)),
+    missing = missing
+  )
+}
+
+#' Is a character vector made of formatted "\[LL, UL\]" intervals?
+#' @keywords internal
+#' @noRd
+is_ci_md <- function(x) {
+  x <- x[!is.na(x) & nzchar(stringr::str_trim(x))]
+  is.character(x) && length(x) > 0 && all(grepl("^\\[.+, .+\\]$", x))
 }
 
 #' Convert p-values to stars
@@ -456,7 +720,9 @@ p2stars <- function(
   prefix = "\\"
 ) {
   pstars <- purrr::map_chr(p, \(pp) {
-    if (is.na(pp)) return("")
+    if (is.na(pp)) {
+      return("")
+    }
     paste0(rep(paste0(prefix, "*"), sum((pp <= alpha) * 1L)), collapse = "")
   })
   if (first_alpha_marginal) {
@@ -546,11 +812,12 @@ header_md <- function(x, level = 1) {
 # Column format ----
 #' Column format class
 #'
-#' This class is used to define the format of columns in tables, including the name, header, latex representation, and a formatter function.
+#' This class is used to define the format of columns in tables, including the name, header, latex representation, a formatter function, and what the header abbreviates.
 #' @param name name of column
 #' @param header markdown representation of header name
 #' @param latex latex representation of header name
 #' @param formatter function that formats the column values. It should take a vector of values and return a character vector of formatted values.
+#' @param abbreviation what the header stands for, used by [apa_note()] to define the abbreviations in a table's note (e.g., `"standardized coefficient"` defines the `&beta;` header as `"&beta; = standardized coefficient"`). The term defined is the header, unless the string is named (e.g., `c(CI = "confidence interval")` defines "CI" for a header such as "95% CI"). Leave empty (the default) for symbols that need no definition, such as *M*, *SD*, *t*, and *p*.
 #' @export
 #' @return column_format object
 #' @examples
@@ -567,14 +834,24 @@ header_md <- function(x, level = 1) {
 #' R2
 #' R2@header
 #' R2@formatter
+#'
+#' # Define an abbreviation in table notes
+#' SS <- column_formats()$Sum_Squares
+#' SS@abbreviation <- "sum of squares"
 column_format <- new_class(
   "column_format",
   properties = list(
     name = class_character,
     header = class_character,
     latex = class_character,
-    formatter = class_function
-  )
+    formatter = class_function,
+    abbreviation = class_character
+  ),
+  validator = function(self) {
+    if (length(self@abbreviation) > 1) {
+      "@abbreviation must be a single string (or empty)"
+    }
+  }
 )
 
 as_tibble <- S7::new_external_generic(
@@ -588,8 +865,17 @@ method(as_tibble, column_format) <- function(x, ...) {
     name = x@name,
     header = x@header,
     latex = ifelse(is.null(x@latex), NA, x@latex),
-    formatter = list(x@formatter)
+    formatter = list(x@formatter),
+    abbreviation = abbreviation_text(x)
   )
+}
+
+#' The abbreviation of a column format as "term = definition" (or NA)
+#' @keywords internal
+#' @noRd
+abbreviation_text <- function(x) {
+  a <- column_abbreviations(x@name, stats::setNames(list(x), x@name))
+  if (length(a) == 0) NA_character_ else paste0(names(a), " = ", a)
 }
 
 method(str, column_format) <- function(object, ...) {
@@ -606,21 +892,32 @@ variable_name_formatter <- function(
   replacement = NULL,
   formatter = NULL
 ) {
+  # Rules are applied in order: specific exponent rules must come before the
+  # generic caret rule, which would otherwise consume their carets
   pre_p2r <- c(
     `\\:` = " : ",
-    `\\^` = "Apasevencaret",
     `\\(Intercept\\)` = the$intercept_text,
     ` \\[linear\\]$` = "",
     ` \\[quadratic\\]$` = " Apasevencaret 2 Apasevencaret",
     ` \\[cubic\\]$` = " Apasevencaret 3 Apasevencaret",
-    ` \\[(\\d)th degree\\]$` = " Apasevencaret \\1 Apasevencaret",
-    `\\^(\\d)\\^` = " Apasevencaret \\1 Apasevencaret",
-    `\\^(\\d)$` = " Apasevencaret \\1 Apasevencaret",
+    # poly() terms (e.g., "x [1st degree]", "x [2nd degree]")
+    ` \\[1st degree\\]$` = "",
+    ` \\[(\\d+)(?:st|nd|rd|th) degree\\]$` = " Apasevencaret \\1 Apasevencaret",
+    # Exponents, with (x^2^) or without (x^2, from I(x^2)) a closing caret
+    `\\^(\\d+)\\^` = " Apasevencaret \\1 Apasevencaret",
+    `\\^(\\d+)` = " Apasevencaret \\1 Apasevencaret",
+    `\\^` = "Apasevencaret",
+    `\\u2013` = "Apasevenendash ",
+    # Ordinal thresholds (e.g., "Low|High")
+    ` ?\\| ?` = " Apasevenpipe ",
+    ` \\[([^]]+)\\]` = "Apasevenendash \\1",
     `\\&numsp;` = "Apasevennumsp",
     `\\&nbsp;` = "Apasevennbsp"
   )
 
   post_p2r <- c(
+    ` ?Apasevenendash ?` = "\u2013",
+    ` ?Apasevenpipe ?` = " | ",
     ` Apasevendotspace` = ".\u2007",
     `Apasevendotspace` = ".\u2007",
     `Apasevennumsp` = "\u2007",
@@ -630,10 +927,28 @@ variable_name_formatter <- function(
     `\\)` = ") ",
     `^ \\(` = "(",
     `\\) $` = ")",
-    ` Apasevencaret (\\d) Apasevencaret` = "^\\1^"
+    ` Apasevencaret (\\d+) Apasevencaret` = "^\\1^"
   )
 
-  x <- stringr::str_replace_all(x, pre_p2r) |>
+  # Protect all-caps words (e.g., ACT, SAT-V) from title casing
+  caps_regex <- "(?<![A-Za-z0-9])[A-Z]{2,}[A-Z0-9]*(?:[-_][A-Z0-9]+)*(?![A-Za-z0-9])"
+  x <- stringr::str_replace_all(x, pre_p2r)
+  caps_words <- unique(unlist(stringr::str_extract_all(x, caps_regex)))
+  caps_words <- caps_words[order(-nchar(caps_words))]
+  caps_keys <- paste0(
+    "Apasevencap",
+    chartr("0123456789", "abcdefghij", seq_along(caps_words)),
+    "z"
+  )
+  for (i in seq_along(caps_words)) {
+    x <- stringr::str_replace_all(
+      x,
+      paste0("(?<![A-Za-z0-9])", caps_words[i], "(?![A-Za-z0-9])"),
+      caps_keys[i]
+    )
+  }
+
+  x <- x |>
     stringr::str_replace_all("\\.\u2007", "Apasevendotspace") |>
     stringr::str_replace_all("\u2007", "Apasevennumsp") |>
     stringr::str_replace_all("\u00A0", "Apasevennbsp") |>
@@ -662,11 +977,27 @@ variable_name_formatter <- function(
         "Apasevennbsp",
         "Apaseventhinsp",
         "Apasevencaret",
+        "Apasevenendash",
+        "Apasevenpipe",
+        "\u2013",
         "\t",
         "\n"
       )
     ) |>
-    stringr::str_replace_all(post_p2r) |>
+    stringr::str_replace_all(post_p2r)
+
+  for (i in seq_along(caps_words)) {
+    x <- stringr::str_replace_all(
+      x,
+      stringr::fixed(caps_keys[i]),
+      gsub("_", " ", caps_words[i], fixed = TRUE)
+    )
+  }
+
+  x <- x |>
+    stringr::str_replace_all("\u2013(\\p{Ll})", \(m) {
+      paste0("\u2013", toupper(substring(m, 2)))
+    }) |>
     stringr::str_replace_all(" \u00D7 ", "\u00D7") |>
     stringr::str_replace_all("\u00D7", " \u00D7 ")
 
@@ -681,8 +1012,17 @@ the <- new.env(parent = emptyenv())
 the$accuracy <- .01
 the$intercept_text <- "Constant"
 the$font_family <- "Times New Roman"
+# Pad to equal rendered width in the$font_family (see num_pad)
+the$width_aware_padding <- TRUE
+# Superscripts and subscripts are drawn smaller than the base text. Word draws
+# them at about 2/3 of the font size; browsers at about 0.83.
+the$script_scale <- 2 / 3
 the$number_formatter <- \(x, accuracy = the$accuracy, ...) {
   align_chr(x, accuracy = accuracy, ...)
+}
+
+the$sci_number_formatter <- \(x, digits = 2, ...) {
+  sci_md(x, digits = digits, align = TRUE)
 }
 the$pvalue_formatter <- \(x, accuracy = the$accuracy, ...) {
   max_digits <- 3
@@ -719,13 +1059,15 @@ the$columns <- list(
     name = "AIC",
     header = "*AIC*",
     latex = "$AIC$",
-    formatter = the$number_formatter
+    formatter = the$number_formatter,
+    abbreviation = "Akaike information criterion"
   ),
   AICc = column_format(
     name = "AICc",
     header = "*AICc*",
     latex = "$AICc$",
-    formatter = the$number_formatter
+    formatter = the$number_formatter,
+    abbreviation = "corrected Akaike information criterion"
   ),
   AIC_wt = column_format(
     name = "AIC_wt",
@@ -761,13 +1103,15 @@ the$columns <- list(
     name = "BIC",
     header = "*BIC*",
     latex = "$BIC$",
-    formatter = the$number_formatter
+    formatter = the$number_formatter,
+    abbreviation = "Bayesian information criterion"
   ),
   BICc = column_format(
     name = "BICc",
     header = "*BICc*",
     latex = "$BICc$",
-    formatter = the$number_formatter
+    formatter = the$number_formatter,
+    abbreviation = "corrected Bayesian information criterion"
   ),
   BIC_wt = column_format(
     name = "BIC_wt",
@@ -815,37 +1159,35 @@ the$columns <- list(
     name = "CFI",
     header = "CFI",
     latex = "CFI",
-    formatter = the$trim_leading_zero
+    formatter = the$trim_leading_zero,
+    abbreviation = "comparative fit index"
   ),
   CI = column_format(
     name = "CI",
     header = "{round(ci * 100)}% CI",
-    latex = "{round(ci * 100)}\\%",
+    latex = "{round(ci * 100)}\\% CI",
     formatter = \(l, u, accuracy = the$accuracy, ...) {
-      middle <- rep(", ", length(l))
-      middle[is.na(l) | is.na(u)] <- ""
-      align_chr(
-        paste0(
-          align_chr(l, accuracy = accuracy, ...),
-          middle,
-          align_chr(u, accuracy = accuracy, ...)
-        ),
-        center = ", "
-      ) |>
-        tagger("[", "]")
-    }
+      ci_md(
+        align_chr(l, accuracy = accuracy, ...),
+        align_chr(u, accuracy = accuracy, ...),
+        missing = is.na(l) | is.na(u)
+      )
+    },
+    abbreviation = c(CI = "confidence interval")
   ),
   CI_high = column_format(
     name = "CI_high",
     header = "UL",
     latex = "UL",
-    formatter = the$number_formatter
+    formatter = the$number_formatter,
+    abbreviation = "upper limit"
   ),
   CI_low = column_format(
     name = "CI_low",
     header = "LL",
     latex = "LL",
-    formatter = the$number_formatter
+    formatter = the$number_formatter,
+    abbreviation = "lower limit"
   ),
   CI_percent = column_format(
     name = "CI_percent",
@@ -862,7 +1204,8 @@ the$columns <- list(
       x_new <- paste0("[", lb, ", ", ub, "]")
       x_new[nchar(x) == 0 | is.na(x) | x == ""] <- NA
       x_new
-    }
+    },
+    abbreviation = c(CI = "confidence interval")
   ),
   cohens_d = column_format(
     name = "cohens_d",
@@ -898,7 +1241,15 @@ the$columns <- list(
     name = "deltaR2",
     header = "&Delta;*R*^2^",
     latex = "$\\Delta R^2$",
-    formatter = the$trim_leading_zero
+    formatter = the$trim_leading_zero,
+    abbreviation = "change in *R*^2^"
+  ),
+  deltaR2_conditional = column_format(
+    name = "deltaR2_conditional",
+    header = "&Delta;*R*^2^~conditional~",
+    latex = "$\\Delta R^2_{\\text{conditional}}$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "change in *R*^2^~conditional~"
   ),
   deltaAIC = column_format(
     name = "deltaAIC",
@@ -940,19 +1291,63 @@ the$columns <- list(
     name = "eta2",
     header = "*&eta;*^2^",
     latex = "$\\eta^2$",
-    formatter = the$trim_leading_zero
+    formatter = the$trim_leading_zero,
+    abbreviation = "eta squared"
   ),
   Eta2 = column_format(
     name = "eta2",
     header = "*&eta;*^2^",
     latex = "$\\eta^2$",
-    formatter = the$trim_leading_zero
+    formatter = the$trim_leading_zero,
+    abbreviation = "eta squared"
   ),
   Eta2_partial = column_format(
     name = "Eta2_partial",
-    header = "*&eta;*^2^",
-    latex = "$\\eta^2$",
-    formatter = the$trim_leading_zero
+    header = "*&eta;*^2^~p~",
+    latex = "$\\eta^2_p$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "partial eta squared"
+  ),
+  Eta2_generalized = column_format(
+    name = "Eta2_generalized",
+    header = "*&eta;*^2^~G~",
+    latex = "$\\eta^2_G$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "generalized eta squared"
+  ),
+  Epsilon2 = column_format(
+    name = "Epsilon2",
+    header = "*&epsilon;*^2^",
+    latex = "$\\epsilon^2$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "epsilon squared"
+  ),
+  Epsilon2_partial = column_format(
+    name = "Epsilon2_partial",
+    header = "*&epsilon;*^2^~p~",
+    latex = "$\\epsilon^2_p$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "partial epsilon squared"
+  ),
+  Exp_Coefficient = column_format(
+    name = "Exp_Coefficient",
+    header = "Exp(*B*)",
+    latex = "Exp($B$)",
+    formatter = the$sci_number_formatter,
+    abbreviation = "exponentiated coefficient"
+  ),
+  Exp_CI = column_format(
+    name = "Exp_CI",
+    header = "{round(ci * 100)}% CI for Exp(*B*)",
+    latex = "{round(ci * 100)}\\% CI for Exp($B$)",
+    formatter = \(l, u, digits = 2, ...) {
+      ci_md(
+        sci_md(l, digits = digits, align = TRUE),
+        sci_md(u, digits = digits, align = TRUE),
+        missing = is.na(l) | is.na(u)
+      )
+    },
+    abbreviation = c(CI = "confidence interval")
   ),
   `F` = column_format(
     name = "F",
@@ -994,13 +1389,34 @@ the$columns <- list(
     name = "NFI",
     header = "NFI",
     latex = "NFI",
-    formatter = the$trim_leading_zero
+    formatter = the$trim_leading_zero,
+    abbreviation = "normed fit index"
   ),
   omega = column_format(
     name = "omega",
     header = "&omega;",
     latex = "$\\omega$",
     formatter = the$trim_leading_zero
+  ),
+  Omega2 = column_format(
+    name = "Omega2",
+    header = "*&omega;*^2^",
+    latex = "$\\omega^2$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "omega squared"
+  ),
+  Omega2_partial = column_format(
+    name = "Omega2_partial",
+    header = "*&omega;*^2^~p~",
+    latex = "$\\omega^2_p$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "partial omega squared"
+  ),
+  Mean_Square = column_format(
+    name = "Mean_Square",
+    header = "*MS*",
+    latex = "$MS$",
+    formatter = the$number_formatter
   ),
   p = column_format(
     name = "p",
@@ -1044,17 +1460,61 @@ the$columns <- list(
     latex = "$\\text{adj}R^2$",
     formatter = the$trim_leading_zero
   ),
+  R2_conditional = column_format(
+    name = "R2_conditional",
+    header = "*R*^2^~conditional~",
+    latex = "$R^2_{\\text{conditional}}$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "variance explained by fixed and random effects"
+  ),
+  R2_marginal = column_format(
+    name = "R2_marginal",
+    header = "*R*^2^~marginal~",
+    latex = "$R^2_{\\text{marginal}}$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "variance explained by fixed effects"
+  ),
+  h2 = column_format(
+    name = "h2",
+    header = "*h*^2^",
+    latex = "$h^2$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "communality"
+  ),
+  u2 = column_format(
+    name = "u2",
+    header = "*u*^2^",
+    latex = "$u^2$",
+    formatter = the$trim_leading_zero,
+    abbreviation = "uniqueness"
+  ),
+  Complexity = column_format(
+    name = "Complexity",
+    header = "Complexity",
+    latex = "Complexity",
+    formatter = the$number_formatter,
+    abbreviation = "Hofmann's complexity index"
+  ),
+  ICC = column_format(
+    name = "ICC",
+    header = "ICC",
+    latex = "ICC",
+    formatter = the$trim_leading_zero,
+    abbreviation = "intraclass correlation coefficient"
+  ),
   RMSE = column_format(
     name = "RMSE",
     header = "*RMSE*",
     latex = "$RMSE$",
-    formatter = the$number_formatter
+    formatter = the$number_formatter,
+    abbreviation = "root mean square error"
   ),
   RMSEA = column_format(
     name = "RMSEA",
     header = "RMSEA",
     latex = "RMSEA",
-    formatter = the$trim_leading_zero
+    formatter = the$trim_leading_zero,
+    abbreviation = "root mean square error of approximation"
   ),
   s = column_format(
     name = "s",
@@ -1074,6 +1534,12 @@ the$columns <- list(
     latex = "$SE$",
     formatter = the$number_formatter
   ),
+  Sum_Squares = column_format(
+    name = "Sum_Squares",
+    header = "*SS*",
+    latex = "$SS$",
+    formatter = the$number_formatter
+  ),
   SE_B = column_format(
     name = "SE_B",
     header = "*SE_B*",
@@ -1084,13 +1550,15 @@ the$columns <- list(
     name = "Sigma",
     header = "&sigma;~*e*~",
     latex = "$\\sigma_{e}$",
-    formatter = the$number_formatter
+    formatter = the$number_formatter,
+    abbreviation = "residual standard deviation"
   ),
   Std_Coefficient = column_format(
     name = "Std_Coefficient",
     header = "&beta;",
     latex = "$\\beta$",
-    formatter = the$trim_leading_zero
+    formatter = the$trim_leading_zero,
+    abbreviation = "standardized coefficient"
   ),
   t = column_format(
     name = "t",
@@ -1141,6 +1609,7 @@ the$columns <- list(
 #' @slot get_header_rename getter for column names with headers as names
 #' @slot get_header_rename_latex getter for column names with latex headers as names
 #' @slot get_tibble getter for tibble with column names, headers, latex headers, and formatters
+#' @slot get_abbreviations getter for the abbreviations defined by the column formats, as a character vector of definitions named by the term defined
 #'
 #' @return column_formats
 #' @export
@@ -1205,6 +1674,9 @@ column_formats <- new_class(
         latex = self@get_latex,
         formatter = self@get_formatters
       )
+    }),
+    get_abbreviations = new_property(getter = \(self) {
+      column_abbreviations(names(S7_data(self)), self)
     })
   ),
   constructor = function(
@@ -1215,9 +1687,15 @@ column_formats <- new_class(
     variable_labels = character(0),
     custom_columns = NULL
   ) {
-    if (is.null(.data)) .data <- the$columns
-    if (is.null(accuracy)) accuracy <- the$accuracy
-    if (is.null(intercept_text)) intercept_text <- the$intercept_text
+    if (is.null(.data)) {
+      .data <- the$columns
+    }
+    if (is.null(accuracy)) {
+      accuracy <- the$accuracy
+    }
+    if (is.null(intercept_text)) {
+      intercept_text <- the$intercept_text
+    }
 
     for (cf in .data) {
       if (!is.null(formals(cf@formatter)["accuracy"])) {
@@ -1276,6 +1754,7 @@ the$column_formats <- column_formats()
 #' @param column_formats column formatting functions
 #' @param number_formatter default function to format numbers
 #' @param trim_leading_zero default function to trim leading zeros from numbers
+#' @param width_aware_padding if `TRUE` (default), [align_chr()] pads text to equal rendered width in `font_family` (when the font is installed). If `FALSE`, text is padded with one figure space per missing character.
 #' @param reset if `TRUE`, reset all defaults (except as specified)
 #'
 #' @return previous defaults
@@ -1292,6 +1771,7 @@ apa7_defaults <- function(
   column_formats = NULL,
   number_formatter = NULL,
   trim_leading_zero = NULL,
+  width_aware_padding = NULL,
   reset = FALSE
 ) {
   old <- the
@@ -1300,19 +1780,22 @@ apa7_defaults <- function(
     the$column_formats <- column_formats()
     the$intercept_text <- "Constant"
     the$font_family <- "Times New Roman"
-    the$number_formatter <- \(x, accuracy = the$accuracy, ...)
+    the$width_aware_padding <- TRUE
+    the$number_formatter <- \(x, accuracy = the$accuracy, ...) {
       align_chr(
         x,
         accuracy = accuracy,
         ...
       )
-    the$trim_leading_zero <- \(x, accuracy = the$accuracy, ...)
+    }
+    the$trim_leading_zero <- \(x, accuracy = the$accuracy, ...) {
       align_chr(
         x,
         accuracy = accuracy,
         trim_leading_zeros = TRUE,
         ...
       )
+    }
     the$pvalue_formatter <- \(x, accuracy = the$accuracy, ...) {
       # nocov start
       max_digits <- 3
@@ -1324,12 +1807,27 @@ apa7_defaults <- function(
     } # nocov end
   }
 
-  if (!is.null(accuracy)) the$accuracy <- accuracy
-  if (!is.null(font_family)) the$font_family <- font_family
-  if (!is.null(intercept_text)) the$intercept_text <- intercept_text
-  if (!is.null(column_formats)) the$column_formats <- column_formats
-  if (!is.null(number_formatter)) the$number_formatter <- number_formatter
-  if (!is.null(trim_leading_zero)) the$trim_leading_zero <- trim_leading_zero
+  if (!is.null(accuracy)) {
+    the$accuracy <- accuracy
+  }
+  if (!is.null(font_family)) {
+    the$font_family <- font_family
+  }
+  if (!is.null(width_aware_padding)) {
+    the$width_aware_padding <- width_aware_padding
+  }
+  if (!is.null(intercept_text)) {
+    the$intercept_text <- intercept_text
+  }
+  if (!is.null(column_formats)) {
+    the$column_formats <- column_formats
+  }
+  if (!is.null(number_formatter)) {
+    the$number_formatter <- number_formatter
+  }
+  if (!is.null(trim_leading_zero)) {
+    the$trim_leading_zero <- trim_leading_zero
+  }
 
   invisible(old)
 }
@@ -1344,7 +1842,6 @@ apa7_defaults <- function(
 #' @param format_separated_headers if `TRUE`, format headers with separated names. For example, if the formatter formats column `R2` as `*R*^2^`, then `Model 1_R2` becomes `Model 1_*R*^2^`)
 #' @param sep separator for separated headers (default is "_")
 #' @param accuracy numeric (default: NULL, uses the current default accuracy set with [apa7_defaults()]). If not NULL, sets the accuracy for the formatter.
-#' @importFrom rlang :=
 #'
 #' @return tibble
 #' @export
@@ -1525,10 +2022,7 @@ apa_format_columns <- function(
 
     if (!is.null(f1)) {
       if (cl %in% colnames(data)) {
-        data <- dplyr::mutate(
-          data,
-          {{ cl }} := f1[[1]](data[, cl, drop = TRUE])
-        )
+        data[[cl]] <- f1[[1]](data[[cl]])
       }
     }
   }

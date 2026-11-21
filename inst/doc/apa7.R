@@ -69,9 +69,9 @@ apa_flextable(d,
 
 
 ## ----vmerge-------------------------------------------------------------------
-d |> 
-  mutate(Model = str_remove(Model, "Model ")) |> 
-apa_flextable() |> 
+d |>
+  mutate(Model = str_remove(Model, "Model ")) |>
+  apa_flextable() |>
   merge_v() |>
   align(j = "Predictor", part = "all") |>
   align(j = "Model", align = "center") |>
@@ -257,7 +257,7 @@ d_quote <- tibble(
     "Tact is the art of making a point without making an enemy.",
     "Short cuts make long delays.",
     "The price one pays for pursuing any profession or calling is an intimate knowledge of its ugly side.",
-    "There is a stubbornness about me that never can bear to be frightened at the will of others. My courage always rises at every attempt to intimidate me",
+    "There is a stubbornness about me that never can bear to be frightened at the will of others. My courage always rises at every attempt to intimidate me.",
     "There is a crack in everything, that’s how the light gets in.",
     "If you choose to dig a rather deep hole, someday you will have no choice but to keep on digging, even with tears.",
     "We long for self-confidence, till we look at the people who have it.",
@@ -288,11 +288,7 @@ d_quote <- tibble(
   arrange(nchar(Quote))
 
 d_quote |> 
-  mutate(Quote = paste0(seq_along(Quote), 
-                        ".\u2007",
-                        Quote) |> 
-           align_chr(side = "left") |> 
-           hanging_indent(width = 55, indent = 7)) |> 
+  mutate(Quote = hanging_indent(Quote, width = 55, indent = 5)) |> 
   apa_flextable() |>  
   align(j = "Attribution", part = "all") |> 
   width(width = c(4.5, 2))
@@ -300,15 +296,6 @@ d_quote |>
 
 ## ----numberedlist-------------------------------------------------------------
 d_quote |> 
-  
-    mutate(linechar = purrr::map_int(Quote, \(x) {
-    stringr::str_split(x, "\\\\\n") |> 
-      purrr::map(str_trim) |> 
-      purrr::map(nchar) |> 
-      purrr::map_int(max)
-  })) |> 
-  arrange(linechar) |> 
-  select(-linechar) |> 
   add_list_column(Quote) |> 
   apa_flextable() |> 
   align(j = "Attribution", part = "all") |>
@@ -403,7 +390,7 @@ fit_3 <- list(
 )
 
 fit_3 |> 
-  apa_parameters() |>
+  apa_parameters(performance_parameters = NULL) |>
   apa_flextable(row_title_column = Model, 
                 row_title_align = "center")
 
@@ -415,8 +402,14 @@ fit_3 |>
 
 
 ## ----correlation--------------------------------------------------------------
-ggplot2::diamonds |> 
-  select(table,  carat, length = x, width = y , depth = z) |> 
+ggplot2::diamonds |>
+  select(
+    Table = table,
+    Caret = carat,
+    Length = x,
+    Width = y ,
+    Depth = z
+  ) |>
   apa_cor() 
 
 
@@ -469,16 +462,35 @@ d <- psych::bfi |>
   rename(any_of(rename_items))
 
 # Analysis
-fit <- fa(d, nfactors = 5, fm = "pa", )
+fit <- fa(d, nfactors = 5, fm = "pa")
 
+# Factor names, in the order the factors appear in the table
+big5 <- c("Neuroticism",
+          "Extraversion",
+          "Conscientiousness",
+          "Agreeableness",
+          "Openness")
 
 # Make table
-fit |>
-  apa_loadings() |> 
-  rename(Extraversion = PA1,
-         Neuroticism = PA2,
-         Conscientiousness = PA3,
-         Openness = PA4,
-         Agreeableness = PA5) |> 
-  apa_flextable(no_format_columns = Variable) 
+apa_loadings(fit,
+             factor_names = big5,
+             format_variable_names = FALSE)
+
+
+## ----fa-variance--------------------------------------------------------------
+apa_loadings(fit,
+             factor_names = big5,
+             format_variable_names = FALSE,
+             min_loading = .3,
+             communality = TRUE,
+             variance = TRUE)
+
+
+## ----fa-cor-------------------------------------------------------------------
+apa_factor_cor(fit, factor_names = big5)
+
+
+## ----pca----------------------------------------------------------------------
+principal(d, nfactors = 5, rotate = "varimax") |>
+  apa_loadings(format_variable_names = FALSE, min_loading = .3)
 

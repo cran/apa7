@@ -4,16 +4,18 @@
 \alias{make_apaquarto}
 \title{Run shiny app to make a document in APA style via Quarto}
 \usage{
-make_apaquarto(launch.browser = TRUE)
+make_apaquarto(launch.browser = TRUE, ask = TRUE)
 }
 \arguments{
 \item{launch.browser}{run shiny app in default browser}
+
+\item{ask}{if \code{TRUE} (default), ask before installing missing packages. If \code{FALSE}, install missing packages without asking.}
 }
 \value{
 Runs a shiny app that creates apaquarto documents
 }
 \description{
-A wrapper for \code{shiny::runGitHub} Note that running this function will install any missing packages needed to run the app: bsicons, bslib, conflicted, dplyr, fresh, purrr, rclipboard, readr, shiny, shinyWidgets, snakecase, tibble, tidyr, tippy, toastui, yaml
+A wrapper for \code{shiny::runGitHub} Note that running this function will install any missing packages needed to run the app: bsicons, bslib, conflicted, dplyr, fresh, purrr, ragg, rclipboard, readr, shiny, shinyWidgets, snakecase, svglite, tibble, tidyr, tippy, toastui, yaml
 }
 \examples{
 \dontrun{
